@@ -132,14 +132,14 @@ func main() {
 	// Register builtin rules (query from Prometheus)
 	if yamlConfig != nil {
 		// Use YAML config with rules array
-		registerBuiltinRulesFromYAML(engine, yamlConfig, logger, promClient)
+		utils.RegisterBuiltinRulesFromYAML(engine, yamlConfig, logger, promClient)
 	} else {
 		// Use JSON config (backward compatibility)
-		registerBuiltinRules(engine, config, logger, promClient)
+		utils.RegisterBuiltinRules(engine, config, logger, promClient)
 	}
 
 	// Register alert notifiers
-	registerAlertNotifiers(engine, config, logger)
+	registerAlertNotifiers(engine, config, yamlConfig, logger)
 
 	// Test connection (optional)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -155,7 +155,7 @@ func main() {
 }
 
 // registerAlertNotifiers registers alert notifiers with the engine
-func registerAlertNotifiers(engine *rules.Engine, config *utils.PrometheusAnomalyConfig, logger *logrus.Logger) {
+func registerAlertNotifiers(engine *rules.Engine, config *utils.PrometheusAnomalyConfig, yamlConfig *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
 	// Log notifier
 	if config.Alerting.Channels.Log {
 		logNotifier := alert.NewLogAlertNotifier(logger)
@@ -164,11 +164,18 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.PrometheusAnomal
 
 	// Telegram notifier
 	if config.Alerting.Channels.Telegram && config.Alerting.Telegram.Enabled {
-		telegramNotifier := alert.NewTelegramNotifier(
+		messageTemplate := ""
+		// Try to get message template from YAML config if available
+		if yamlConfig != nil && yamlConfig.Alerting.Telegram.MessageTemplate != "" {
+			messageTemplate = yamlConfig.Alerting.Telegram.MessageTemplate
+		}
+
+		telegramNotifier := alert.NewTelegramNotifierWithTemplate(
 			config.Alerting.Telegram.BotToken,
 			config.Alerting.Telegram.ChatID,
 			config.Alerting.Telegram.ParseMode,
 			config.Alerting.Telegram.Enabled,
+			messageTemplate,
 			logger,
 		)
 		engine.RegisterNotifier(telegramNotifier)

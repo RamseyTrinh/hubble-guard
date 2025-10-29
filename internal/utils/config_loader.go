@@ -1,12 +1,17 @@
 package utils
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
 
+	"hubble-anomaly-detector/internal/client"
 	"hubble-anomaly-detector/internal/model"
+	"hubble-anomaly-detector/internal/rules"
+	"hubble-anomaly-detector/internal/rules/builtin"
 
+	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 )
 
@@ -14,6 +19,7 @@ import (
 type AnomalyDetectionConfig struct {
 	Application ApplicationYAMLConfig `yaml:"application"`
 	Prometheus  PrometheusYAMLConfig  `yaml:"prometheus"`
+	Namespaces  []string              `yaml:"namespaces"`
 	Detection   DetectionYAMLConfig   `yaml:"detection"`
 	Rules       []model.Rule          `yaml:"rules"`
 	Alerting    AlertingYAMLConfig    `yaml:"alerting"`
@@ -38,19 +44,37 @@ type PrometheusYAMLConfig struct {
 
 // DetectionYAMLConfig cấu hình detection từ YAML
 type DetectionYAMLConfig struct {
-	BaselineMultiplier    float64  `yaml:"baseline_multiplier"`
-	BaselineWindowMinutes int      `yaml:"baseline_window_minutes"`
-	CheckIntervalSeconds  int      `yaml:"check_interval_seconds"`
-	Namespaces            []string `yaml:"namespaces"`
+	BaselineMultiplier    float64 `yaml:"baseline_multiplier"`
+	BaselineWindowMinutes int     `yaml:"baseline_window_minutes"`
+	CheckIntervalSeconds  int     `yaml:"check_interval_seconds"`
 }
 
 // AlertingYAMLConfig cấu hình alerting từ YAML
 type AlertingYAMLConfig struct {
-	Enabled              bool               `yaml:"enabled"`
-	MaxAlertsPerMinute   int                `yaml:"max_alerts_per_minute"`
-	AlertCooldownSeconds int                `yaml:"alert_cooldown_seconds"`
-	Channels             AlertChannelsYAML  `yaml:"channels"`
-	Telegram             TelegramYAMLConfig `yaml:"telegram"`
+	Enabled              bool                   `yaml:"enabled"`
+	MaxAlertsPerMinute   int                    `yaml:"max_alerts_per_minute"`
+	AlertCooldownSeconds int                    `yaml:"alert_cooldown_seconds"`
+	Channels             AlertChannelsYAML      `yaml:"channels"`
+	Telegram             TelegramYAMLConfig     `yaml:"telegram"`
+	Alertmanager         AlertmanagerYAMLConfig `yaml:"alertmanager,omitempty"`
+}
+
+// AlertmanagerYAMLConfig cấu hình Alertmanager từ YAML
+type AlertmanagerYAMLConfig struct {
+	Enabled        bool                    `yaml:"enabled"`
+	URL            string                  `yaml:"url"`
+	ResolveTimeout string                  `yaml:"resolve_timeout"`
+	Route          AlertmanagerRouteConfig `yaml:"route"`
+	TelegramConfig TelegramYAMLConfig      `yaml:"telegram_config"`
+}
+
+// AlertmanagerRouteConfig cấu hình route của Alertmanager
+type AlertmanagerRouteConfig struct {
+	Receiver       string   `yaml:"receiver"`
+	GroupBy        []string `yaml:"group_by"`
+	RepeatInterval string   `yaml:"repeat_interval"`
+	GroupWait      string   `yaml:"group_wait"`
+	GroupInterval  string   `yaml:"group_interval"`
 }
 
 // AlertChannelsYAML cấu hình channels từ YAML
@@ -63,10 +87,11 @@ type AlertChannelsYAML struct {
 
 // TelegramYAMLConfig cấu hình Telegram từ YAML
 type TelegramYAMLConfig struct {
-	BotToken  string `yaml:"bot_token"`
-	ChatID    string `yaml:"chat_id"`
-	ParseMode string `yaml:"parse_mode"`
-	Enabled   bool   `yaml:"enabled"`
+	BotToken        string `yaml:"bot_token"`
+	ChatID          string `yaml:"chat_id"`
+	ParseMode       string `yaml:"parse_mode"`
+	Enabled         bool   `yaml:"enabled"`
+	MessageTemplate string `yaml:"message_template,omitempty"`
 }
 
 // LoggingYAMLConfig cấu hình logging từ YAML
@@ -110,11 +135,6 @@ func (c *AnomalyDetectionConfig) Validate() error {
 	if c.Application.PrometheusExportURL == "" {
 		// Extract port from URL, default to 8080
 		c.Application.PrometheusExportURL = "8080"
-	} else if !strings.Contains(c.Application.PrometheusExportURL, ":") {
-		// If just a port number, keep as is
-		if !strings.HasPrefix(c.Application.PrometheusExportURL, ":") {
-			// It's just a port number like "8080"
-		}
 	}
 	if c.Application.DefaultNamespace == "" {
 		c.Application.DefaultNamespace = "default"
@@ -134,6 +154,11 @@ func (c *AnomalyDetectionConfig) Validate() error {
 		c.Prometheus.RetryDelaySeconds = 5
 	}
 
+	// Namespaces defaults
+	if len(c.Namespaces) == 0 {
+		c.Namespaces = []string{"default"}
+	}
+
 	// Detection defaults
 	if c.Detection.BaselineMultiplier <= 0 {
 		c.Detection.BaselineMultiplier = 3.0
@@ -143,9 +168,6 @@ func (c *AnomalyDetectionConfig) Validate() error {
 	}
 	if c.Detection.CheckIntervalSeconds <= 0 {
 		c.Detection.CheckIntervalSeconds = 10
-	}
-	if len(c.Detection.Namespaces) == 0 {
-		c.Detection.Namespaces = []string{"default"}
 	}
 
 	// Alerting defaults
@@ -217,7 +239,7 @@ func (c *AnomalyDetectionConfig) ToPrometheusAnomalyConfig() *PrometheusAnomalyC
 			BaselineMultiplier:    c.Detection.BaselineMultiplier,
 			BaselineWindowMinutes: c.Detection.BaselineWindowMinutes,
 			CheckIntervalSeconds:  c.Detection.CheckIntervalSeconds,
-			Namespaces:            c.Detection.Namespaces,
+			Namespaces:            c.Namespaces,
 		},
 		Rules: rulesMap,
 		Alerting: AlertingConfig{
@@ -264,4 +286,85 @@ func (c *AnomalyDetectionConfig) GetRuleConfigByName(name string) (*model.Rule, 
 func (c *AnomalyDetectionConfig) IsRuleEnabled(name string) bool {
 	rule, exists := c.GetRuleConfigByName(name)
 	return exists && rule.Enabled
+}
+
+// RegisterBuiltinRulesFromYAML registers rules from YAML config
+func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetectionConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
+	for _, ruleConfig := range yamlConfig.Rules {
+		if !ruleConfig.Enabled {
+			continue
+		}
+
+		// Handle different rule types
+		switch ruleConfig.Name {
+		case "traffic_spike":
+			if promClient != nil {
+				threshold := 3.0
+				if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["multiplier"].(int); ok {
+					threshold = float64(thresholds)
+				}
+
+				promRule := builtin.NewDDoSRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				promRule.SetNamespaces(yamlConfig.Namespaces)
+				promRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(promRule)
+				ctx := context.Background()
+				go promRule.Start(ctx)
+				logger.Infof("Registered rule: %s (threshold: %.2fx)", ruleConfig.Name, threshold)
+			}
+
+		case "new_destination":
+			// TODO: Implement Prometheus-based new destination rule
+			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
+
+		case "tcp_reset_surge":
+			// TODO: Implement Prometheus-based TCP reset rule
+			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
+
+		case "tcp_drop_surge":
+			// TODO: Implement Prometheus-based TCP drop rule
+			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
+
+		case "high_bandwidth":
+			// TODO: Implement Prometheus-based bandwidth rule
+			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
+
+		case "unusual_port_scan":
+			// TODO: Implement Prometheus-based port scan rule
+			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
+
+		default:
+			logger.Warnf("Unknown rule type: %s", ruleConfig.Name)
+		}
+	}
+}
+
+// RegisterBuiltinRules registers rules from JSON config (backward compatibility)
+func RegisterBuiltinRules(engine *rules.Engine, config *PrometheusAnomalyConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
+	// DDoS rule - query from Prometheus
+	if ruleConfig, exists := config.GetRuleConfig("traffic_spike"); exists && promClient != nil {
+		threshold := 3.0
+		if ruleConfig.ThresholdMultiplier != nil {
+			threshold = *ruleConfig.ThresholdMultiplier
+		}
+		// Use Prometheus-based rule
+		promRule := builtin.NewDDoSRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+		promRule.SetNamespaces(config.Detection.Namespaces)
+		promRule.SetAlertEmitter(func(alert *model.Alert) {
+			engine.EmitAlert(*alert)
+		})
+		if promRule.IsEnabled() {
+			engine.RegisterRule(promRule)
+			// Start periodic checking in background
+			ctx := context.Background()
+			go promRule.Start(ctx)
+		}
+	}
+
+	// Other rules from JSON config...
+	// (Keep existing logic for backward compatibility)
 }

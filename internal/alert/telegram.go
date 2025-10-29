@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"text/template"
 	"time"
 
 	"hubble-anomaly-detector/internal/model"
@@ -15,12 +17,13 @@ import (
 
 // TelegramNotifier xử lý việc gửi thông báo qua Telegram
 type TelegramNotifier struct {
-	botToken  string
-	chatID    string
-	parseMode string
-	enabled   bool
-	client    *http.Client
-	logger    *logrus.Logger
+	botToken        string
+	chatID          string
+	parseMode       string
+	enabled         bool
+	messageTemplate *template.Template
+	client          *http.Client
+	logger          *logrus.Logger
 }
 
 // TelegramMessage cấu trúc message gửi đến Telegram API
@@ -38,7 +41,12 @@ type TelegramResponse struct {
 
 // NewTelegramNotifier tạo instance mới của TelegramNotifier
 func NewTelegramNotifier(botToken, chatID, parseMode string, enabled bool, logger *logrus.Logger) *TelegramNotifier {
-	return &TelegramNotifier{
+	return NewTelegramNotifierWithTemplate(botToken, chatID, parseMode, enabled, "", logger)
+}
+
+// NewTelegramNotifierWithTemplate tạo instance mới với message template
+func NewTelegramNotifierWithTemplate(botToken, chatID, parseMode string, enabled bool, messageTemplate string, logger *logrus.Logger) *TelegramNotifier {
+	tn := &TelegramNotifier{
 		botToken:  botToken,
 		chatID:    chatID,
 		parseMode: parseMode,
@@ -48,6 +56,24 @@ func NewTelegramNotifier(botToken, chatID, parseMode string, enabled bool, logge
 		},
 		logger: logger,
 	}
+
+	// Parse message template nếu có
+	if messageTemplate != "" && strings.TrimSpace(messageTemplate) != "" {
+		// Thêm custom functions cho template
+		funcMap := template.FuncMap{
+			"formatTime": func(t time.Time, layout string) string {
+				return t.Format(layout)
+			},
+		}
+		tmpl, err := template.New("telegram_message").Funcs(funcMap).Parse(messageTemplate)
+		if err != nil {
+			logger.Warnf("Failed to parse Telegram message template: %v, using default format", err)
+		} else {
+			tn.messageTemplate = tmpl
+		}
+	}
+
+	return tn
 }
 
 // SendAlert implements Notifier interface - gửi alert qua Telegram với retry logic
@@ -78,12 +104,34 @@ func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 
 // formatAlertMessage format alert thành message cho Telegram
 func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
-	timestamp := alert.Timestamp.Format("2006-01-02 15:04:05")
+	// Nếu có template, sử dụng template
+	if tn.messageTemplate != nil {
+		var buf bytes.Buffer
+		err := tn.messageTemplate.Execute(&buf, alert)
+		if err != nil {
+			tn.logger.Warnf("Failed to execute message template: %v, using default format", err)
+		} else {
+			return buf.String()
+		}
+	}
 
-	message := fmt.Sprintf("🚨 %s Alert\n\nTime: %s\nType: %s",
+	// Format mặc định
+	timestamp := alert.Timestamp.Format("2006-01-02 15:04:05")
+	message := fmt.Sprintf("🚨 *%s Alert*\n\n*Type:* %s\n*Time:* %s\n*Message:* %s",
 		alert.Severity,
+		alert.Type,
 		timestamp,
-		alert.Type)
+		alert.Message)
+
+	// Thêm thông tin flow nếu có
+	if alert.FlowData != nil {
+		if alert.FlowData.Source != nil {
+			message += fmt.Sprintf("\n*Source:* %s/%s", alert.FlowData.Source.Namespace, alert.FlowData.Source.PodName)
+		}
+		if alert.FlowData.Destination != nil {
+			message += fmt.Sprintf("\n*Destination:* %s/%s", alert.FlowData.Destination.Namespace, alert.FlowData.Destination.PodName)
+		}
+	}
 
 	return message
 }
@@ -93,8 +141,9 @@ func (tn *TelegramNotifier) sendMessage(text string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tn.botToken)
 
 	message := TelegramMessage{
-		ChatID: tn.chatID,
-		Text:   text,
+		ChatID:    tn.chatID,
+		Text:      text,
+		ParseMode: tn.parseMode,
 	}
 
 	jsonData, err := json.Marshal(message)

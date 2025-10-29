@@ -3,23 +3,24 @@
 
 application:
   hubble_server: "localhost:4245"
-  prometheus_export_url: "8080"  # Port để expose metrics cho Prometheus scrape
+  prometheus_export_url: "8080"
   default_namespace: "default"
   auto_start: false
 
 prometheus:
-  url: "http://localhost:9090"  # Prometheus server URL để query metrics
+  url: "http://localhost:9090"
   timeout_seconds: 10
   retry_attempts: 3
   retry_delay_seconds: 5
+
+namespaces:
+  - "default"
+  - "kube-system"
 
 detection:
   baseline_multiplier: 3.0
   baseline_window_minutes: 1
   check_interval_seconds: 10
-  namespaces:
-    - "default"
-    - "kube-system"
 
 rules:
   - name: "traffic_spike"
@@ -83,6 +84,19 @@ alerting:
     chat_id: "5037781514"
     parse_mode: "Markdown"
     enabled: true
+    message_template: |
+      🚨 *{{ .Severity }} Alert*
+      
+      *Type:* {{ .Type }}
+      *Time:* {{ formatTime .Timestamp "2006-01-02 15:04:05" }}
+      *Message:* {{ .Message }}
+      
+      {{ if and .FlowData .FlowData.Source }}
+      *Source:* {{ .FlowData.Source.Namespace }}/{{ .FlowData.Source.PodName }}
+      {{ end }}
+      {{ if and .FlowData .FlowData.Destination }}
+      *Destination:* {{ .FlowData.Destination.Namespace }}/{{ .FlowData.Destination.PodName }}
+      {{ end }}
 
 logging:
   level: "INFO"
