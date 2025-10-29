@@ -1,0 +1,42 @@
+{
+  "rules": [
+    {
+      "name": "traffic_spike",
+      "enabled": true,
+      "severity": "CRITICAL",
+      "description": "Phát hiện traffic spike có thể là DDoS",
+      "type": "prometheus",
+      "thresholds": {
+        "multiplier": 3.0
+      }
+    },
+    {
+      "name": "new_destination",
+      "enabled": true,
+      "severity": "HIGH",
+      "description": "Phát hiện kết nối đến destination mới",
+      "type": "prometheus"
+    },
+    {
+      "name": "tcp_reset_surge",
+      "enabled": true,
+      "severity": "HIGH",
+      "description": "Phát hiện surge TCP resets",
+      "type": "prometheus",
+      "thresholds": {
+        "per_minute": 10
+      }
+    },
+    {
+      "name": "tcp_drop_surge",
+      "enabled": true,
+      "severity": "HIGH",
+      "description": "Phát hiện surge TCP drops",
+      "type": "prometheus",
+      "thresholds": {
+        "per_minute": 10
+      }
+    }
+  ]
+}
+

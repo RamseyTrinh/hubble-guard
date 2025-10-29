@@ -1,0 +1,91 @@
+# Anomaly Detection Configuration
+# Main configuration file for Hubble Anomaly Detector
+
+application:
+  hubble_server: "localhost:4245"
+  prometheus_export_url: "8080"  # Port để expose metrics cho Prometheus scrape
+  default_namespace: "default"
+  auto_start: false
+
+prometheus:
+  url: "http://localhost:9090"  # Prometheus server URL để query metrics
+  timeout_seconds: 10
+  retry_attempts: 3
+  retry_delay_seconds: 5
+
+detection:
+  baseline_multiplier: 3.0
+  baseline_window_minutes: 1
+  check_interval_seconds: 10
+  namespaces:
+    - "default"
+    - "kube-system"
+
+rules:
+  - name: "traffic_spike"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện traffic spike có thể là DDoS"
+    type: "prometheus"
+    thresholds:
+      multiplier: 3.0
+  
+  - name: "new_destination"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện kết nối đến destination mới"
+    type: "prometheus"
+  
+  - name: "tcp_reset_surge"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện surge TCP resets"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
+  
+  - name: "tcp_drop_surge"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện surge TCP drops"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
+  
+  - name: "high_bandwidth"
+    enabled: true
+    severity: "MEDIUM"
+    description: "Phát hiện bandwidth cao bất thường"
+    type: "prometheus"
+    thresholds:
+      bytes_per_second: 1000000
+  
+  - name: "unusual_port_scan"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện port scanning"
+    type: "prometheus"
+    thresholds:
+      ports_per_minute: 50
+
+alerting:
+  enabled: true
+  max_alerts_per_minute: 10
+  alert_cooldown_seconds: 60
+  channels:
+    log: true
+    webhook: false
+    email: false
+    telegram: true
+  
+  telegram:
+    bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"
+    chat_id: "5037781514"
+    parse_mode: "Markdown"
+    enabled: true
+
+logging:
+  level: "INFO"
+  format: "json"
+  file_path: "/var/log/anomaly-detector.log"
+
