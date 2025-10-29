@@ -1,0 +1,16 @@
+apiVersion: v2
+name: hubble-anomaly-detector
+description: A Helm chart for Hubble Anomaly Detector - Network flow anomaly detection using Prometheus
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - hubble
+  - anomaly-detection
+  - prometheus
+  - network-security
+  - monitoring
+maintainers:
+  - name: Your Name
+    email: your.email@example.com
+

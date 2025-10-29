@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hubble-anomaly-detector.fullname" . }}-config
+  labels:
+    {{- include "hubble-anomaly-detector.labels" . | nindent 4 }}
+data:
+  anomaly_detection.yaml: |
+    # Anomaly Detection Configuration
+    # Generated from Helm chart values
+    
+    application:
+      hubble_server: {{ .Values.application.hubble_server | quote }}
+      prometheus_export_url: {{ .Values.application.prometheus_export_url | quote }}
+      default_namespace: {{ .Values.application.default_namespace | quote }}
+      auto_start: {{ .Values.application.auto_start }}
+    
+    prometheus:
+      url: {{ .Values.prometheus.url | quote }}
+      timeout_seconds: {{ .Values.prometheus.timeout_seconds }}
+      retry_attempts: {{ .Values.prometheus.retry_attempts }}
+      retry_delay_seconds: {{ .Values.prometheus.retry_delay_seconds }}
+    
+    namespaces:
+    {{- range .Values.namespaces }}
+      - {{ . | quote }}
+    {{- end }}
+    
+    detection:
+      baseline_multiplier: {{ .Values.detection.baseline_multiplier }}
+      baseline_window_minutes: {{ .Values.detection.baseline_window_minutes }}
+      check_interval_seconds: {{ .Values.detection.check_interval_seconds }}
+    
+    rules:
+    {{- range .Values.rules }}
+      - name: {{ .name | quote }}
+        enabled: {{ .enabled }}
+        severity: {{ .severity | quote }}
+        description: {{ .description | quote }}
+        type: {{ .type | quote }}
+        {{- if .thresholds }}
+        thresholds:
+        {{- range $key, $value := .thresholds }}
+          {{ $key }}: {{ $value }}
+        {{- end }}
+        {{- end }}
+    {{- end }}
+    
+    alerting:
+      enabled: {{ .Values.alerting.enabled }}
+      max_alerts_per_minute: {{ .Values.alerting.max_alerts_per_minute }}
+      alert_cooldown_seconds: {{ .Values.alerting.alert_cooldown_seconds }}
+      channels:
+        log: {{ .Values.alerting.channels.log }}
+        webhook: {{ .Values.alerting.channels.webhook }}
+        email: {{ .Values.alerting.channels.email }}
+        telegram: {{ .Values.alerting.channels.telegram }}
+      
+      telegram:
+        bot_token: {{ .Values.alerting.telegram.bot_token | quote }}
+        chat_id: {{ .Values.alerting.telegram.chat_id | quote }}
+        parse_mode: {{ .Values.alerting.telegram.parse_mode | quote }}
+        enabled: {{ .Values.alerting.telegram.enabled }}
+        {{- if .Values.alerting.telegram.message_template }}
+        message_template: |
+{{ .Values.alerting.telegram.message_template | indent 10 }}
+        {{- end }}
+    
+    logging:
+      level: {{ .Values.logging.level | quote }}
+      format: {{ .Values.logging.format | quote }}
+      file_path: {{ .Values.logging.file_path | quote }}
+

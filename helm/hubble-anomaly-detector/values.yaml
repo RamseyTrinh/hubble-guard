@@ -1,0 +1,192 @@
+# Default values for hubble-anomaly-detector
+# This is a YAML-formatted file.
+
+# Application configuration
+application:
+  hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
+  prometheus_export_url: "8080"
+  default_namespace: "default"
+  auto_start: false
+
+# Prometheus configuration
+prometheus:
+  url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+  timeout_seconds: 10
+  retry_attempts: 3
+  retry_delay_seconds: 5
+
+# Namespaces to monitor
+namespaces:
+  - "default"
+  - "kube-system"
+
+# Detection configuration
+detection:
+  baseline_multiplier: 3.0
+  baseline_window_minutes: 1
+  check_interval_seconds: 10
+
+# Rules configuration
+rules:
+  - name: "traffic_spike"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện traffic spike có thể là DDoS"
+    type: "prometheus"
+    thresholds:
+      multiplier: 3.0
+  
+  - name: "new_destination"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện kết nối đến destination mới"
+    type: "prometheus"
+  
+  - name: "tcp_reset_surge"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện surge TCP resets"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
+  
+  - name: "tcp_drop_surge"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện surge TCP drops"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
+  
+  - name: "high_bandwidth"
+    enabled: true
+    severity: "MEDIUM"
+    description: "Phát hiện bandwidth cao bất thường"
+    type: "prometheus"
+    thresholds:
+      bytes_per_second: 1000000
+  
+  - name: "unusual_port_scan"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện port scanning"
+    type: "prometheus"
+    thresholds:
+      ports_per_minute: 50
+
+# Alerting configuration
+alerting:
+  enabled: true
+  max_alerts_per_minute: 10
+  alert_cooldown_seconds: 60
+  channels:
+    log: true
+    webhook: false
+    email: false
+    telegram: true
+  
+  telegram:
+    bot_token: ""  # Set your Telegram bot token
+    chat_id: ""    # Set your Telegram chat ID
+    parse_mode: "Markdown"
+    enabled: false  # Set to true after configuring bot_token and chat_id
+    message_template: |
+      🚨 *{{ .Severity }} Alert*
+      
+      *Type:* {{ .Type }}
+      *Time:* {{ formatTime .Timestamp "2006-01-02 15:04:05" }}
+      *Message:* {{ .Message }}
+      
+      {{ if and .FlowData .FlowData.Source }}
+      *Source:* {{ .FlowData.Source.Namespace }}/{{ .FlowData.Source.PodName }}
+      {{ end }}
+      {{ if and .FlowData .FlowData.Destination }}
+      *Destination:* {{ .FlowData.Destination.Namespace }}/{{ .FlowData.Destination.PodName }}
+      {{ end }}
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "json"
+  file_path: "/var/log/anomaly-detector.log"
+
+# Kubernetes deployment configuration
+replicaCount: 1
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+image:
+  repository: hubble-anomaly-detector
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# ServiceMonitor for Prometheus operator (optional)
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}
+
+# Ingress configuration (optional)
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: hubble-detector.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+

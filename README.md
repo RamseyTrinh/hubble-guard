@@ -1,5 +1,7 @@
 # Hubble Anomaly Detector
 
+Network flow anomaly detection system using Hubble and Prometheus.
+
 Một công cụ phát hiện bất thường mạng dựa trên dữ liệu flow từ Hubble, sử dụng rule-based detection để cảnh báo về các hoạt động đáng ngờ.
 
 ## Tính năng
@@ -276,6 +278,109 @@ docker build -t hubble-anomaly-detector .
 # Chạy container
 docker run -it --rm hubble-anomaly-detector
 ```
+
+## Kubernetes Deployment với Helm
+
+### Prerequisites
+
+- Kubernetes cluster (1.19+)
+- Helm 3.0+
+- kubectl configured
+- Hubble Relay installed
+- Prometheus accessible
+
+### Quick Start
+
+1. **Build và push Docker image:**
+
+```bash
+# Build image
+make docker-build
+
+# Push to registry (set DOCKER_REGISTRY env var)
+export DOCKER_REGISTRY=your-registry.com
+make docker-push
+```
+
+2. **Update values.yaml:**
+
+Edit `helm/hubble-anomaly-detector/values.yaml`:
+
+```yaml
+image:
+  repository: your-registry.com/hubble-anomaly-detector
+  tag: "1.0.0"
+
+prometheus:
+  url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+
+application:
+  hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
+
+alerting:
+  telegram:
+    bot_token: "YOUR_BOT_TOKEN"
+    chat_id: "YOUR_CHAT_ID"
+    enabled: true
+```
+
+3. **Install với Helm:**
+
+```bash
+# Install chart
+make helm-install
+
+# Or manually:
+helm install hubble-detector ./helm/hubble-anomaly-detector \
+  --namespace hubble \
+  --create-namespace \
+  -f helm/hubble-anomaly-detector/values.yaml
+```
+
+4. **Verify deployment:**
+
+```bash
+# Check pods
+kubectl get pods -n hubble -l app.kubernetes.io/name=hubble-anomaly-detector
+
+# Check logs
+kubectl logs -n hubble -l app.kubernetes.io/name=hubble-anomaly-detector -f
+
+# Check service
+kubectl get svc -n hubble -l app.kubernetes.io/name=hubble-anomaly-detector
+
+# Test metrics
+kubectl port-forward -n hubble svc/hubble-detector-hubble-anomaly-detector 8080:8080
+curl http://localhost:8080/metrics
+```
+
+### Helm Commands
+
+```bash
+# Lint chart
+make helm-lint
+
+# Package chart
+make helm-package
+
+# Install chart
+make helm-install
+
+# Upgrade chart
+make helm-upgrade
+
+# Uninstall chart
+make helm-uninstall
+
+# Dry-run (template rendering)
+make helm-template
+```
+
+### Configuration
+
+Xem `helm/hubble-anomaly-detector/values.yaml` để xem tất cả các tùy chọn cấu hình.
+
+Chi tiết hướng dẫn triển khai: xem `helm/DEPLOYMENT.md`.
 
 ## Đóng góp
 

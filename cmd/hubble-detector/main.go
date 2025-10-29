@@ -45,18 +45,10 @@ func main() {
 	// Try to load from YAML first
 	yamlConfig, err := utils.LoadAnomalyDetectionConfig(*configFile)
 	if err != nil {
-		// Fallback to JSON config for backward compatibility
+		// Fallback to default config if YAML fails
 		fmt.Printf("Failed to load YAML config %s: %v\n", *configFile, err)
-		fmt.Println("Trying to load from prometheus_config.json...")
-
-		jsonConfig, jsonErr := utils.LoadPrometheusConfig("prometheus_config.json")
-		if jsonErr != nil {
-			fmt.Printf("Failed to load JSON config: %v\n", jsonErr)
-			fmt.Println("Using default configuration...")
-			config = utils.GetDefaultPrometheusConfig()
-		} else {
-			config = jsonConfig
-		}
+		fmt.Println("Using default configuration...")
+		config = utils.GetDefaultPrometheusConfig()
 	} else {
 		// Convert YAML config to PrometheusAnomalyConfig for compatibility
 		config = yamlConfig.ToPrometheusAnomalyConfig()
@@ -254,13 +246,10 @@ func testTelegramNotification(configFile string) {
 	// Try to load from YAML first
 	yamlConfig, err := utils.LoadAnomalyDetectionConfig(configFile)
 	if err != nil {
-		// Fallback to JSON config
-		config, err = utils.LoadPrometheusConfig("prometheus_config.json")
-		if err != nil {
-			fmt.Printf("Failed to load config file %s: %v\n", configFile, err)
-			fmt.Println("Using default configuration...")
-			config = utils.GetDefaultPrometheusConfig()
-		}
+		// Fallback to default config if YAML fails
+		fmt.Printf("Failed to load config file %s: %v\n", configFile, err)
+		fmt.Println("Using default configuration...")
+		config = utils.GetDefaultPrometheusConfig()
 	} else {
 		config = yamlConfig.ToPrometheusAnomalyConfig()
 	}
