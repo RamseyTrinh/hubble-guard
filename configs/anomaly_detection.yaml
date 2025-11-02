@@ -15,7 +15,7 @@ prometheus:
 
 namespaces:
   - "default"
-  - "kube-system"
+  - "test"
 
 detection:
   baseline_multiplier: 3.0
@@ -68,6 +68,22 @@ rules:
     type: "prometheus"
     thresholds:
       ports_per_minute: 50
+  
+  - name: "block_connection"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện blocked connections (DROP flows)"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
+  
+  - name: "port_scan"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện port scanning attacks"
+    type: "prometheus"
+    thresholds:
+      distinct_ports: 10
 
 alerting:
   enabled: true

@@ -40,7 +40,7 @@ func main() {
 
 	// Load configuration from YAML file
 	var yamlConfig *utils.AnomalyDetectionConfig
-	var config *utils.PrometheusAnomalyConfig
+	var config *utils.DefaultConfig
 
 	// Try to load from YAML first
 	yamlConfig, err := utils.LoadAnomalyDetectionConfig(*configFile)
@@ -48,10 +48,10 @@ func main() {
 		// Fallback to default config if YAML fails
 		fmt.Printf("Failed to load YAML config %s: %v\n", *configFile, err)
 		fmt.Println("Using default configuration...")
-		config = utils.GetDefaultPrometheusConfig()
+		config = utils.GetDefaultConfig()
 	} else {
-		// Convert YAML config to PrometheusAnomalyConfig for compatibility
-		config = yamlConfig.ToPrometheusAnomalyConfig()
+		// Convert YAML config to DefaultConfig for compatibility
+		config = yamlConfig.ToDefaultConfig()
 		fmt.Printf("✅ Loaded configuration from %s\n", *configFile)
 	}
 
@@ -78,7 +78,13 @@ func main() {
 	fmt.Printf("Connecting to Hubble relay at: %s\n", hubbleServer)
 	fmt.Printf("Prometheus export URL: %s\n", prometheusPort)
 	fmt.Printf("Prometheus query URL: %s\n", config.Prometheus.URL)
-	fmt.Printf("Using namespace: %s\n", namespace)
+	if yamlConfig != nil && len(yamlConfig.Namespaces) > 0 {
+		fmt.Printf("Monitoring namespaces: %s\n", strings.Join(yamlConfig.Namespaces, ", "))
+	} else if len(config.Detection.Namespaces) > 0 {
+		fmt.Printf("Monitoring namespaces: %s\n", strings.Join(config.Detection.Namespaces, ", "))
+	} else {
+		fmt.Printf("Using namespace: %s\n", namespace)
+	}
 	fmt.Println("")
 
 	// Create logger
@@ -141,13 +147,24 @@ func main() {
 	}
 	cancel()
 
+	// Get namespaces from config
+	var namespaces []string
+	if yamlConfig != nil && len(yamlConfig.Namespaces) > 0 {
+		namespaces = yamlConfig.Namespaces
+	} else if len(config.Detection.Namespaces) > 0 {
+		namespaces = config.Detection.Namespaces
+	} else {
+		// Fallback to default namespace if no namespaces configured
+		namespaces = []string{namespace}
+	}
+
 	// Show menu and handle user choice
-	streamFlowsToPrometheus(hubbleClient, namespace, engine, logger, config)
+	streamFlowsToPrometheus(hubbleClient, namespaces, engine, logger, config)
 
 }
 
 // registerAlertNotifiers registers alert notifiers with the engine
-func registerAlertNotifiers(engine *rules.Engine, config *utils.PrometheusAnomalyConfig, yamlConfig *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
+func registerAlertNotifiers(engine *rules.Engine, config *utils.DefaultConfig, yamlConfig *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
 	// Log notifier
 	if config.Alerting.Channels.Log {
 		logNotifier := alert.NewLogAlertNotifier(logger)
@@ -176,11 +193,11 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.PrometheusAnomal
 
 // streamFlowsToPrometheus streams flows and sends metrics to Prometheus
 // Rules will query Prometheus separately, not process individual flows
-func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespace string, engine *rules.Engine, logger *logrus.Logger, config *utils.PrometheusAnomalyConfig) {
+func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.DefaultConfig) {
 	fmt.Println("\nANOMALY DETECTION MODE (Prometheus-based)")
 	fmt.Println("Press Ctrl+C to return to main menu")
 	fmt.Println("")
-	fmt.Println("📊 Flows will be collected and sent to Prometheus metrics")
+	fmt.Println(" Flows will be collected and sent to Prometheus metrics")
 	fmt.Println("🔍 Rules will query Prometheus periodically to detect anomalies")
 	fmt.Println("")
 
@@ -227,7 +244,7 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespace st
 
 	// Stream flows - ONLY to send metrics to Prometheus, NOT for rule evaluation
 	// Rules will query Prometheus separately
-	err := hubbleClient.StreamFlowsWithMetricsOnly(ctx, namespace, func(ns string) {
+	err := hubbleClient.StreamFlowsWithMetricsOnly(ctx, namespaces, func(ns string) {
 		// Just count flows, rules will query from Prometheus
 	}, nil) // No flow processor - rules don't process individual flows
 	if err != nil {
@@ -241,7 +258,7 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespace st
 
 // testTelegramNotification test gửi thông báo qua Telegram
 func testTelegramNotification(configFile string) {
-	var config *utils.PrometheusAnomalyConfig
+	var config *utils.DefaultConfig
 
 	// Try to load from YAML first
 	yamlConfig, err := utils.LoadAnomalyDetectionConfig(configFile)
@@ -249,9 +266,9 @@ func testTelegramNotification(configFile string) {
 		// Fallback to default config if YAML fails
 		fmt.Printf("Failed to load config file %s: %v\n", configFile, err)
 		fmt.Println("Using default configuration...")
-		config = utils.GetDefaultPrometheusConfig()
+		config = utils.GetDefaultConfig()
 	} else {
-		config = yamlConfig.ToPrometheusAnomalyConfig()
+		config = yamlConfig.ToDefaultConfig()
 	}
 
 	logger := utils.NewLogger(config.Logging.Level)

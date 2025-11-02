@@ -2,6 +2,8 @@ package client
 
 import (
 	"fmt"
+	"sync"
+	"time"
 
 	"hubble-anomaly-detector/internal/model"
 
@@ -47,6 +49,94 @@ type PrometheusMetrics struct {
 	ErrorResponseRate      *prometheus.CounterVec
 	TCPResetRate           *prometheus.CounterVec
 	TCPDropRate            *prometheus.CounterVec
+	PortScanDistinctPorts  *prometheus.GaugeVec
+
+	// Port scan tracking
+	portScanTracker *portScanTracker
+}
+
+// portScanEntry tracks ports seen for a source-dest pair
+type portScanEntry struct {
+	ports map[uint16]time.Time
+}
+
+// portScanTracker tracks distinct ports in 10s windows per source-dest pair
+type portScanTracker struct {
+	entries map[string]*portScanEntry
+	mu      sync.RWMutex
+	window  time.Duration
+}
+
+// newPortScanTracker creates a new port scan tracker
+func newPortScanTracker() *portScanTracker {
+	return &portScanTracker{
+		entries: make(map[string]*portScanEntry),
+		window:  10 * time.Second,
+	}
+}
+
+// addPort adds a port to the tracker for a source-dest pair
+func (pst *portScanTracker) addPort(sourceIP, destIP string, port uint16) {
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+	now := time.Now()
+
+	pst.mu.Lock()
+	defer pst.mu.Unlock()
+
+	entry, exists := pst.entries[key]
+	if !exists {
+		entry = &portScanEntry{
+			ports: make(map[uint16]time.Time),
+		}
+		pst.entries[key] = entry
+	}
+
+	// Add or update port timestamp
+	entry.ports[port] = now
+
+	// Cleanup old ports (older than window)
+	pst.cleanupOldPorts(key, entry, now)
+}
+
+// cleanupOldPorts removes ports older than the window
+func (pst *portScanTracker) cleanupOldPorts(key string, entry *portScanEntry, now time.Time) {
+	for port, timestamp := range entry.ports {
+		if now.Sub(timestamp) > pst.window {
+			delete(entry.ports, port)
+		}
+	}
+
+	// Remove entry if no ports left
+	if len(entry.ports) == 0 {
+		delete(pst.entries, key)
+	}
+}
+
+// getDistinctPortCount returns the count of distinct ports for a source-dest pair
+func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+	now := time.Now()
+
+	pst.mu.RLock()
+	defer pst.mu.RUnlock()
+
+	entry, exists := pst.entries[key]
+	if !exists {
+		return 0
+	}
+
+	// Count valid ports (within window)
+	count := 0
+	for port, timestamp := range entry.ports {
+		if now.Sub(timestamp) <= pst.window {
+			count++
+		} else {
+			// Mark for cleanup (we'll do it in next addPort call)
+			delete(entry.ports, port)
+		}
+	}
+
+	return count
 }
 
 // NewPrometheusMetrics tạo instance mới của PrometheusMetrics
@@ -243,6 +333,15 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"namespace", "source_ip", "destination_ip"},
 		),
+
+		PortScanDistinctPorts: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "portscan_distinct_ports_10s",
+				Help: "Number of distinct destination ports in the last 10 seconds per source-dest pair",
+			},
+			[]string{"source_ip", "dest_ip"},
+		),
+		portScanTracker: newPortScanTracker(),
 	}
 }
 
@@ -410,4 +509,20 @@ func (m *PrometheusMetrics) RecordTCPReset(namespace, sourceIP, destIP string) {
 // RecordTCPDrop ghi lại TCP drop
 func (m *PrometheusMetrics) RecordTCPDrop(namespace, sourceIP, destIP string) {
 	m.TCPDropRate.WithLabelValues(namespace, sourceIP, destIP).Inc()
+}
+
+// UpdatePortScanDistinctPorts updates the distinct ports count for port scan detection
+func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP string, port uint16) {
+	if m.portScanTracker == nil {
+		return
+	}
+
+	// Add port to tracker
+	m.portScanTracker.addPort(sourceIP, destIP, port)
+
+	// Get current distinct port count
+	count := m.portScanTracker.getDistinctPortCount(sourceIP, destIP)
+
+	// Update metric
+	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP).Set(float64(count))
 }

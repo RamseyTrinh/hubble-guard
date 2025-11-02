@@ -125,7 +125,7 @@ func evaluateAllRules() {
     for _, window := range windows {
         totalRequests += window.Count
     }
-    // Hiển thị: "📊 Status: X total requests in last 60s - Normal"
+    // Hiển thị: " Status: X total requests in last 60s - Normal"
 }
 ```
 
@@ -148,7 +148,7 @@ Time Windows → Rule Engine → 4 Detection Rules
      ↓
 Metrics Calculation → Threshold Check → Alert Generation
      ↓
-Status Display: "📊 Status: X requests - Normal"
+Status Display: " Status: X requests - Normal"
 Alert Display: " [time] CRITICAL DDoS Attack Detected"
 ```
 
@@ -208,16 +208,16 @@ Alert Display: " [time] CRITICAL DDoS Attack Detected"
 
 ### Status Display (Normal)
 ```
-📊 Status: 150 total requests in last 60s - Normal
-📊 Status: 200 total requests in last 60s - Normal
+ Status: 150 total requests in last 60s - Normal
+ Status: 200 total requests in last 60s - Normal
 ```
 
 
 
 ### Status Display (Every 60 seconds)
 ```
-📊 Status: 150 total requests in last 60s - Normal
-📊 Status: 200 total requests in last 60s - Normal
+ Status: 150 total requests in last 60s - Normal
+ Status: 200 total requests in last 60s - Normal
 ```
 
 ## Troubleshooting
@@ -405,7 +405,7 @@ Chi tiết hướng dẫn triển khai: xem `helm/DEPLOYMENT.md`.
 
 ### v1.0.0 - Phiên bản đầu tiên
 - 🚀 Tính năng cơ bản: kết nối Hubble, anomaly detection
-- 📊 Redis-based caching và rule engine
+-  Redis-based caching và rule engine
 - 🎯 Interactive menu interface
 
 ## License

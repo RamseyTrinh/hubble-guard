@@ -67,24 +67,25 @@ type AnomalyRuleConfig struct {
 	ThresholdPerMinute  *int     `json:"threshold_per_minute,omitempty"`
 }
 
-// PrometheusAnomalyConfig cấu hình tổng thể cho Prometheus Anomaly Detector
-type PrometheusAnomalyConfig struct {
+// DefaultConfig cấu hình mặc định cho Anomaly Detector (tương thích ngược với format JSON cũ)
+type DefaultConfig struct {
 	Application ApplicationConfig            `json:"application"`
 	Prometheus  PrometheusConfig             `json:"prometheus"`
+	Namespaces  []string                     `json:"namespaces"`
 	Detection   DetectionConfig              `json:"detection"`
 	Rules       map[string]AnomalyRuleConfig `json:"rules"`
 	Alerting    AlertingConfig               `json:"alerting"`
 	Logging     LoggingConfig                `json:"logging"`
 }
 
-// LoadPrometheusConfig load cấu hình từ file JSON
-func LoadPrometheusConfig(filename string) (*PrometheusAnomalyConfig, error) {
+// LoadPrometheusConfig load cấu hình từ file JSON (backward compatibility)
+func LoadPrometheusConfig(filename string) (*DefaultConfig, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file %s: %v", filename, err)
 	}
 
-	var config PrometheusAnomalyConfig
+	var config DefaultConfig
 	err = json.Unmarshal(data, &config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config file %s: %v", filename, err)
@@ -98,7 +99,7 @@ func LoadPrometheusConfig(filename string) (*PrometheusAnomalyConfig, error) {
 }
 
 // Validate kiểm tra tính hợp lệ của cấu hình
-func (c *PrometheusAnomalyConfig) Validate() error {
+func (c *DefaultConfig) Validate() error {
 	if c.Application.HubbleServer == "" {
 		c.Application.HubbleServer = "localhost:4245"
 	}
@@ -159,9 +160,9 @@ func (c *PrometheusAnomalyConfig) Validate() error {
 	return nil
 }
 
-// GetDefaultPrometheusConfig trả về cấu hình mặc định
-func GetDefaultPrometheusConfig() *PrometheusAnomalyConfig {
-	return &PrometheusAnomalyConfig{
+// GetDefaultConfig trả về cấu hình mặc định
+func GetDefaultConfig() *DefaultConfig {
+	return &DefaultConfig{
 		Application: ApplicationConfig{
 			HubbleServer:     "localhost:4245",
 			PrometheusPort:   "8080",
@@ -235,7 +236,7 @@ func GetDefaultPrometheusConfig() *PrometheusAnomalyConfig {
 }
 
 // SaveConfig lưu cấu hình ra file
-func (c *PrometheusAnomalyConfig) SaveConfig(filename string) error {
+func (c *DefaultConfig) SaveConfig(filename string) error {
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %v", err)
@@ -250,24 +251,24 @@ func (c *PrometheusAnomalyConfig) SaveConfig(filename string) error {
 }
 
 // GetRuleConfig lấy cấu hình của một rule
-func (c *PrometheusAnomalyConfig) GetRuleConfig(ruleName string) (AnomalyRuleConfig, bool) {
+func (c *DefaultConfig) GetRuleConfig(ruleName string) (AnomalyRuleConfig, bool) {
 	rule, exists := c.Rules[ruleName]
 	return rule, exists
 }
 
 // IsRuleEnabled kiểm tra xem rule có được enable không
-func (c *PrometheusAnomalyConfig) IsRuleEnabled(ruleName string) bool {
+func (c *DefaultConfig) IsRuleEnabled(ruleName string) bool {
 	rule, exists := c.Rules[ruleName]
 	return exists && rule.Enabled
 }
 
 // GetNamespaceList trả về danh sách namespaces
-func (c *PrometheusAnomalyConfig) GetNamespaceList() []string {
+func (c *DefaultConfig) GetNamespaceList() []string {
 	return c.Detection.Namespaces
 }
 
 // AddNamespace thêm namespace mới
-func (c *PrometheusAnomalyConfig) AddNamespace(namespace string) {
+func (c *DefaultConfig) AddNamespace(namespace string) {
 	for _, ns := range c.Detection.Namespaces {
 		if ns == namespace {
 			return
@@ -277,7 +278,7 @@ func (c *PrometheusAnomalyConfig) AddNamespace(namespace string) {
 }
 
 // RemoveNamespace xóa namespace
-func (c *PrometheusAnomalyConfig) RemoveNamespace(namespace string) {
+func (c *DefaultConfig) RemoveNamespace(namespace string) {
 	for i, ns := range c.Detection.Namespaces {
 		if ns == namespace {
 			c.Detection.Namespaces = append(c.Detection.Namespaces[:i], c.Detection.Namespaces[i+1:]...)

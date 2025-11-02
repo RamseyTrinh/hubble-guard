@@ -85,74 +85,6 @@ func (c *HubbleGRPCClient) TestConnection(ctx context.Context) error {
 	return fmt.Errorf("connection test failed: connection state is %s", finalState.String())
 }
 
-// StreamFlowsViewOnly streams flows from Hubble and only prints them (no Redis)
-func (c *HubbleGRPCClient) StreamFlowsViewOnly(ctx context.Context, namespace string) error {
-	fmt.Println("🚀 Starting to stream flows from Hubble relay...")
-	if namespace != "" {
-		fmt.Printf("📋 Filtering flows for namespace: %s\n", namespace)
-	}
-	fmt.Println("Press Ctrl+C to stop")
-	fmt.Println(strings.Repeat("=", 80))
-
-	client := observer.NewObserverClient(c.conn)
-
-	req := &observer.GetFlowsRequest{
-		Follow: true, // Stream flows continuously
-	}
-
-	if namespace != "" {
-		req.Whitelist = []*observer.FlowFilter{
-			{
-				SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-			{
-				DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-		}
-	}
-
-	stream, err := client.GetFlows(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to start flow streaming: %v", err)
-	}
-
-	flowCount := 0
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("\n Stopped streaming flows")
-			return nil
-		default:
-			// Receive flow from stream
-			response, err := stream.Recv()
-			if err == io.EOF {
-				fmt.Println(" Stream ended")
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("failed to receive flow: %v", err)
-			}
-
-			flowCount++
-
-			// Convert Hubble flow to our Flow struct
-			flow := c.convertHubbleFlow(response.GetFlow())
-			if flow != nil {
-				// Record metrics
-				if c.metrics != nil {
-					c.metrics.RecordFlow(flow)
-					// Record additional metrics for anomaly detection
-					c.recordAnomalyDetectionMetrics(flow)
-				}
-			}
-
-			// Print flow details for viewing
-			c.printFlow(flowCount, response)
-		}
-	}
-}
-
 func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsResponse) {
 	flow := response.GetFlow()
 	if flow == nil {
@@ -350,19 +282,45 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 		c.metrics.RecordNewDestination(flow.IP.Source, flow.IP.Destination, namespace)
 	}
 
+	// Record port scan distinct ports (track destination ports per source-dest pair)
+	if flow.IP != nil && flow.L4 != nil {
+		var destPort uint16
+		if flow.L4.TCP != nil && flow.L4.TCP.DestinationPort > 0 {
+			destPort = uint16(flow.L4.TCP.DestinationPort)
+		} else if flow.L4.UDP != nil && flow.L4.UDP.DestinationPort > 0 {
+			destPort = uint16(flow.L4.UDP.DestinationPort)
+		}
+		if destPort > 0 {
+			c.metrics.UpdatePortScanDistinctPorts(flow.IP.Source, flow.IP.Destination, destPort)
+		}
+	}
+
 	// Record error responses (L7 errors)
 	if flow.L7 != nil {
 		c.metrics.RecordErrorResponse(namespace, "l7_flow")
 	}
 }
 
-// StreamFlowsWithMetricsOnly streams flows from Hubble and records metrics without detailed flow logging
-// flowProcessor is optional - if nil, flows are only sent to Prometheus metrics
-func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespace string, flowCounter func(string), flowProcessor func(*model.Flow)) error {
+func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
 	fmt.Println("🚀 Starting to stream flows from Hubble relay with metrics (no flow logs)...")
-	if namespace != "" {
-		fmt.Printf("📋 Filtering flows for namespace: %s\n", namespace)
+
+	// Convert namespaces to slice
+	var nsList []string
+	switch v := namespaces.(type) {
+	case string:
+		if v != "" {
+			nsList = []string{v}
+			fmt.Printf("📋 Filtering flows for namespace: %s\n", v)
+		}
+	case []string:
+		nsList = v
+		if len(v) > 0 {
+			fmt.Printf("📋 Filtering flows for namespaces: %s\n", strings.Join(v, ", "))
+		}
+	default:
+		// If nil or empty, don't filter
 	}
+
 	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println("Flow logging disabled - only baseline monitoring enabled")
 	fmt.Println(strings.Repeat("=", 80))
@@ -373,15 +331,20 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 		Follow: true,
 	}
 
-	if namespace != "" {
-		req.Whitelist = []*observer.FlowFilter{
-			{
-				SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-			{
-				DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
+	// Create whitelist filters for all namespaces
+	if len(nsList) > 0 {
+		var filters []*observer.FlowFilter
+		for _, ns := range nsList {
+			filters = append(filters,
+				&observer.FlowFilter{
+					SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + ns},
+				},
+				&observer.FlowFilter{
+					DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + ns},
+				},
+			)
 		}
+		req.Whitelist = filters
 	}
 
 	stream, err := client.GetFlows(ctx, req)
@@ -423,7 +386,14 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 				}
 
 				if flowCounter != nil {
-					flowCounter(namespace)
+					// Get namespace from flow
+					flowNamespace := "unknown"
+					if flow.Source != nil && flow.Source.Namespace != "" {
+						flowNamespace = flow.Source.Namespace
+					} else if flow.Destination != nil && flow.Destination.Namespace != "" {
+						flowNamespace = flow.Destination.Namespace
+					}
+					flowCounter(flowNamespace)
 				}
 
 				// Process flow through processor for rule evaluation
@@ -433,7 +403,7 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 			}
 
 			if time.Since(lastLogTime) >= 10*time.Second {
-				fmt.Printf("📊 Processed %d flows in the last 10 seconds\n", flowCount)
+				fmt.Printf(" Processed %d flows in the last 10 seconds\n", flowCount)
 				lastLogTime = time.Now()
 				flowCount = 0
 			}
@@ -529,6 +499,14 @@ func (c *HubbleGRPCClient) convertHubbleFlow(hubbleFlow *observer.Flow) *model.F
 		flow.Verdict = model.Verdict_DROPPED
 	case observer.Verdict_ERROR:
 		flow.Verdict = model.Verdict_ERROR
+	case observer.Verdict_AUDIT:
+		flow.Verdict = model.Verdict_AUDIT
+	case observer.Verdict_REDIRECTED:
+		flow.Verdict = model.Verdict_REDIRECTED
+	case observer.Verdict_TRACED:
+		flow.Verdict = model.Verdict_TRACED
+	case observer.Verdict_TRANSLATED:
+		flow.Verdict = model.Verdict_TRANSLATED
 	default:
 		flow.Verdict = model.Verdict_VERDICT_UNKNOWN
 	}

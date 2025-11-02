@@ -189,9 +189,9 @@ func (c *AnomalyDetectionConfig) Validate() error {
 	return nil
 }
 
-// ToPrometheusAnomalyConfig converts YAML config to PrometheusAnomalyConfig format
+// ToDefaultConfig converts YAML config to DefaultConfig format
 // for backward compatibility
-func (c *AnomalyDetectionConfig) ToPrometheusAnomalyConfig() *PrometheusAnomalyConfig {
+func (c *AnomalyDetectionConfig) ToDefaultConfig() *DefaultConfig {
 	// Convert rules to map format
 	rulesMap := make(map[string]AnomalyRuleConfig)
 	for _, rule := range c.Rules {
@@ -223,7 +223,7 @@ func (c *AnomalyDetectionConfig) ToPrometheusAnomalyConfig() *PrometheusAnomalyC
 		}
 	}
 
-	return &PrometheusAnomalyConfig{
+	return &DefaultConfig{
 		Application: ApplicationConfig{
 			HubbleServer:     c.Application.HubbleServer,
 			PrometheusPort:   exportPort,
@@ -337,6 +337,53 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 			// TODO: Implement Prometheus-based port scan rule
 			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
 
+		case "block_connection":
+			if promClient != nil {
+				threshold := 10.0
+				if thresholds, ok := ruleConfig.Thresholds["per_minute"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["per_minute"].(int); ok {
+					threshold = float64(thresholds)
+				} else if thresholds, ok := ruleConfig.Thresholds["count"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["count"].(int); ok {
+					threshold = float64(thresholds)
+				}
+
+				blockRule := builtin.NewBlockConnectionRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				blockRule.SetNamespaces(yamlConfig.Namespaces)
+				blockRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(blockRule)
+				ctx := context.Background()
+				go blockRule.Start(ctx)
+				logger.Infof("Registered rule: %s (threshold: %.0f DROP flows per minute)", ruleConfig.Name, threshold)
+			}
+
+		case "port_scan":
+			if promClient != nil {
+				threshold := 10.0
+				if thresholds, ok := ruleConfig.Thresholds["distinct_ports"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["distinct_ports"].(int); ok {
+					threshold = float64(thresholds)
+				} else if thresholds, ok := ruleConfig.Thresholds["count"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["count"].(int); ok {
+					threshold = float64(thresholds)
+				}
+
+				portScanRule := builtin.NewPortScanRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				portScanRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(portScanRule)
+				ctx := context.Background()
+				go portScanRule.Start(ctx)
+				logger.Infof("Registered rule: %s (threshold: %.0f distinct ports in 10s)", ruleConfig.Name, threshold)
+			}
+
 		default:
 			logger.Warnf("Unknown rule type: %s", ruleConfig.Name)
 		}
@@ -344,7 +391,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 }
 
 // RegisterBuiltinRules registers rules from JSON config (backward compatibility)
-func RegisterBuiltinRules(engine *rules.Engine, config *PrometheusAnomalyConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
+func RegisterBuiltinRules(engine *rules.Engine, config *DefaultConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
 	// DDoS rule - query from Prometheus
 	if ruleConfig, exists := config.GetRuleConfig("traffic_spike"); exists && promClient != nil {
 		threshold := 3.0

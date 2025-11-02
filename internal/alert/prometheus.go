@@ -118,6 +118,13 @@ func (c *PrometheusCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.metrics.ConnectionErrors.Describe(ch)
 	c.metrics.FlowProcessingTime.Describe(ch)
 	c.metrics.ActiveConnections.Describe(ch)
+	c.metrics.BaselineTrafficRate.Describe(ch)
+	c.metrics.TrafficSpikeMultiplier.Describe(ch)
+	c.metrics.NewDestinations.Describe(ch)
+	c.metrics.ErrorResponseRate.Describe(ch)
+	c.metrics.TCPResetRate.Describe(ch)
+	c.metrics.TCPDropRate.Describe(ch)
+	c.metrics.PortScanDistinctPorts.Describe(ch)
 }
 
 // Collect implements prometheus.Collector
@@ -139,6 +146,13 @@ func (c *PrometheusCollector) Collect(ch chan<- prometheus.Metric) {
 	c.metrics.ConnectionErrors.Collect(ch)
 	c.metrics.FlowProcessingTime.Collect(ch)
 	c.metrics.ActiveConnections.Collect(ch)
+	c.metrics.BaselineTrafficRate.Collect(ch)
+	c.metrics.TrafficSpikeMultiplier.Collect(ch)
+	c.metrics.NewDestinations.Collect(ch)
+	c.metrics.ErrorResponseRate.Collect(ch)
+	c.metrics.TCPResetRate.Collect(ch)
+	c.metrics.TCPDropRate.Collect(ch)
+	c.metrics.PortScanDistinctPorts.Collect(ch)
 }
 
 // RegisterCustomMetrics đăng ký custom metrics với Prometheus registry

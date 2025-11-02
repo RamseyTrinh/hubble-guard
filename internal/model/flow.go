@@ -24,6 +24,10 @@ const (
 	Verdict_FORWARDED       Verdict = 1
 	Verdict_DROPPED         Verdict = 2
 	Verdict_ERROR           Verdict = 3
+	Verdict_AUDIT           Verdict = 4
+	Verdict_REDIRECTED      Verdict = 5
+	Verdict_TRACED          Verdict = 6
+	Verdict_TRANSLATED      Verdict = 7
 )
 
 func (v Verdict) String() string {
@@ -34,6 +38,14 @@ func (v Verdict) String() string {
 		return "DROPPED"
 	case Verdict_ERROR:
 		return "ERROR"
+	case Verdict_AUDIT:
+		return "AUDIT"
+	case Verdict_REDIRECTED:
+		return "REDIRECTED"
+	case Verdict_TRACED:
+		return "TRACED"
+	case Verdict_TRANSLATED:
+		return "TRANSLATED"
 	default:
 		return "UNKNOWN"
 	}
