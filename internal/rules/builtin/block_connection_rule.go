@@ -120,8 +120,6 @@ func (r *BlockConnectionRule) checkFromPrometheus(ctx context.Context) {
 }
 
 func (r *BlockConnectionRule) checkNamespace(ctx context.Context, namespace string) {
-	// Query for count of DROP flows in the last 1 minute
-	// Using increase() to count the number of DROP flows in the time window
 	query := fmt.Sprintf(`sum(increase(hubble_flows_by_verdict_total{verdict="DROP", namespace="%s"}[1m]))`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
@@ -148,20 +146,17 @@ func (r *BlockConnectionRule) checkNamespace(ctx context.Context, namespace stri
 			Timestamp: time.Now(),
 		}
 		r.logger.Warnf("Block Connection Rule Alert: %s", alert.Message)
-		// Emit alert through emitter function
 		if r.alertEmitter != nil {
 			r.alertEmitter(alert)
 		}
 	}
 }
 
-// getNamespacesFromConfig returns list of namespaces to check
 func (r *BlockConnectionRule) getNamespacesFromConfig() []string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.namespaces) > 0 {
 		return r.namespaces
 	}
-	// Default fallback
 	return []string{"default", "kube-system"}
 }

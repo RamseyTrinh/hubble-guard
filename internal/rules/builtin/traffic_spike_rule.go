@@ -12,7 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// DDoSRulePrometheus detects potential DDoS attacks by querying Prometheus metrics
 type DDoSRulePrometheus struct {
 	name           string
 	enabled        bool
@@ -31,12 +30,10 @@ type DDoSRulePrometheus struct {
 	namespaces     []string
 }
 
-// PrometheusQueryClient interface for querying Prometheus
 type PrometheusQueryClient interface {
 	Query(ctx context.Context, query string, timeout time.Duration) (prommodel.Value, error)
 }
 
-// NewDDoSRulePrometheus creates a new DDoS rule that queries Prometheus
 func NewDDoSRulePrometheus(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *DDoSRulePrometheus {
 	if threshold <= 0 {
 		threshold = 3.0
@@ -58,27 +55,22 @@ func NewDDoSRulePrometheus(enabled bool, severity string, threshold float64, pro
 	}
 }
 
-// SetAlertEmitter sets the function to emit alerts
 func (r *DDoSRulePrometheus) SetAlertEmitter(emitter func(*model.Alert)) {
 	r.alertEmitter = emitter
 }
 
-// SetNamespaces sets namespaces to check
 func (r *DDoSRulePrometheus) SetNamespaces(namespaces []string) {
 	r.namespaces = namespaces
 }
 
-// Name returns the rule name
 func (r *DDoSRulePrometheus) Name() string {
 	return r.name
 }
 
-// IsEnabled returns whether the rule is enabled
 func (r *DDoSRulePrometheus) IsEnabled() bool {
 	return r.enabled
 }
 
-// Start begins periodic checking from Prometheus
 func (r *DDoSRulePrometheus) Start(ctx context.Context) {
 	if !r.enabled {
 		return
@@ -103,20 +95,15 @@ func (r *DDoSRulePrometheus) Start(ctx context.Context) {
 	}
 }
 
-// Stop stops the rule
 func (r *DDoSRulePrometheus) Stop() {
 	close(r.stopChan)
 }
 
-// Evaluate is called for each flow but we don't process flows directly
 func (r *DDoSRulePrometheus) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
-	// Rules now query from Prometheus, not from individual flows
 	return nil
 }
 
-// checkFromPrometheus queries Prometheus and checks for traffic spikes
 func (r *DDoSRulePrometheus) checkFromPrometheus(ctx context.Context) {
-	// Get namespaces from config
 	namespaces := r.namespaces
 	if len(namespaces) == 0 {
 		namespaces = r.getNamespacesFromConfig()
@@ -128,7 +115,6 @@ func (r *DDoSRulePrometheus) checkFromPrometheus(ctx context.Context) {
 }
 
 func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace string) {
-	// Query current rate from Prometheus
 	query := fmt.Sprintf(`rate(hubble_flows_total{namespace="%s"}[1m])`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
@@ -148,10 +134,8 @@ func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace strin
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Check if we have baseline
 	baseline, exists := r.baseline[namespace]
 	if !exists {
-		// Start baseline collection (1 minute)
 		baselineStart, baselineStarted := r.baselineStart[namespace]
 		if !baselineStarted {
 			r.baselineStart[namespace] = time.Now()
@@ -161,7 +145,6 @@ func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace strin
 			return
 		}
 
-		// Check if baseline collection is complete
 		now := time.Now()
 		elapsed := now.Sub(baselineStart)
 		if elapsed < r.baselineWindow[namespace] {
@@ -171,7 +154,6 @@ func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace strin
 			return
 		}
 
-		// Calculate baseline
 		if len(r.baselineRates[namespace]) > 0 {
 			sum := 0.0
 			for _, rate := range r.baselineRates[namespace] {
@@ -213,12 +195,9 @@ func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace strin
 	}
 }
 
-// getNamespacesFromConfig returns list of namespaces to check
 func (r *DDoSRulePrometheus) getNamespacesFromConfig() []string {
-	// Use namespaces set via SetNamespaces
 	if len(r.namespaces) > 0 {
 		return r.namespaces
 	}
-	// Default fallback
 	return []string{"default", "kube-system"}
 }

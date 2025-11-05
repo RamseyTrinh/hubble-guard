@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// PrometheusExporter quản lý việc expose metrics qua HTTP endpoint
 type PrometheusExporter struct {
 	server  *http.Server
 	metrics *client.PrometheusMetrics
@@ -21,7 +20,6 @@ type PrometheusExporter struct {
 	port    string
 }
 
-// NewPrometheusExporter tạo instance mới của PrometheusExporter
 func NewPrometheusExporter(port string, logger *logrus.Logger) *PrometheusExporter {
 	metrics := client.NewPrometheusMetrics()
 
@@ -53,7 +51,6 @@ func NewPrometheusExporter(port string, logger *logrus.Logger) *PrometheusExport
 	}
 }
 
-// Start khởi động Prometheus exporter server
 func (e *PrometheusExporter) Start(ctx context.Context) error {
 	e.logger.Infof("Starting Prometheus exporter on port %s", e.port)
 	e.logger.Infof("Metrics available at: http://localhost:%s/metrics", e.port)
@@ -74,7 +71,6 @@ func (e *PrometheusExporter) Start(ctx context.Context) error {
 	return e.server.Shutdown(shutdownCtx)
 }
 
-// Stop dừng Prometheus exporter server
 func (e *PrometheusExporter) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -82,24 +78,20 @@ func (e *PrometheusExporter) Stop() error {
 	return e.server.Shutdown(ctx)
 }
 
-// GetMetrics trả về instance của PrometheusMetrics
 func (e *PrometheusExporter) GetMetrics() *client.PrometheusMetrics {
 	return e.metrics
 }
 
-// PrometheusCollector implements prometheus.Collector interface
 type PrometheusCollector struct {
 	metrics *client.PrometheusMetrics
 }
 
-// NewPrometheusCollector tạo instance mới của PrometheusCollector
 func NewPrometheusCollector(metrics *client.PrometheusMetrics) *PrometheusCollector {
 	return &PrometheusCollector{
 		metrics: metrics,
 	}
 }
 
-// Describe implements prometheus.Collector
 func (c *PrometheusCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.metrics.FlowTotal.Describe(ch)
 	c.metrics.FlowByVerdict.Describe(ch)
@@ -127,7 +119,6 @@ func (c *PrometheusCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.metrics.PortScanDistinctPorts.Describe(ch)
 }
 
-// Collect implements prometheus.Collector
 func (c *PrometheusCollector) Collect(ch chan<- prometheus.Metric) {
 	c.metrics.FlowTotal.Collect(ch)
 	c.metrics.FlowByVerdict.Collect(ch)
@@ -155,13 +146,11 @@ func (c *PrometheusCollector) Collect(ch chan<- prometheus.Metric) {
 	c.metrics.PortScanDistinctPorts.Collect(ch)
 }
 
-// RegisterCustomMetrics đăng ký custom metrics với Prometheus registry
 func RegisterCustomMetrics(registry prometheus.Registerer, metrics *client.PrometheusMetrics) error {
 	collector := NewPrometheusCollector(metrics)
 	return registry.Register(collector)
 }
 
-// CreateCustomRegistry tạo Prometheus registry tùy chỉnh
 func CreateCustomRegistry() *prometheus.Registry {
 	registry := prometheus.NewRegistry()
 
@@ -171,7 +160,6 @@ func CreateCustomRegistry() *prometheus.Registry {
 	return registry
 }
 
-// StartPrometheusExporterWithCustomRegistry khởi động exporter với custom registry
 func StartPrometheusExporterWithCustomRegistry(port string, logger *logrus.Logger) (*PrometheusExporter, error) {
 	metrics := client.NewPrometheusMetrics()
 	registry := CreateCustomRegistry()

@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// PrometheusMetrics chứa tất cả các metrics được expose
 type PrometheusMetrics struct {
 	// Flow metrics
 	FlowTotal         *prometheus.CounterVec
@@ -50,6 +49,8 @@ type PrometheusMetrics struct {
 	TCPResetRate           *prometheus.CounterVec
 	TCPDropRate            *prometheus.CounterVec
 	PortScanDistinctPorts  *prometheus.GaugeVec
+	NamespaceAccess        *prometheus.CounterVec // Cross-namespace access tracking
+	SuspiciousOutbound     *prometheus.CounterVec // Suspicious outbound connections tracking
 
 	// Port scan tracking
 	portScanTracker *portScanTracker
@@ -341,6 +342,22 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"source_ip", "dest_ip"},
 		),
+
+		NamespaceAccess: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hubble_namespace_access_total",
+				Help: "Total number of cross-namespace access attempts",
+			},
+			[]string{"source_namespace", "dest_namespace", "dest_service", "dest_pod"},
+		),
+
+		SuspiciousOutbound: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hubble_suspicious_outbound_total",
+				Help: "Total number of suspicious outbound connections to suspicious ports",
+			},
+			[]string{"namespace", "destination_port"},
+		),
 		portScanTracker: newPortScanTracker(),
 	}
 }
@@ -458,6 +475,54 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	// Error metrics
 	if flow.Verdict == model.Verdict_ERROR {
 		m.FlowErrors.WithLabelValues("verdict_error", namespace).Inc()
+	}
+
+	// Namespace access tracking - track cross-namespace access
+	if flow.Source != nil && flow.Destination != nil {
+		sourceNS := flow.Source.Namespace
+		destNS := flow.Destination.Namespace
+		if sourceNS != "" && destNS != "" && sourceNS != destNS {
+			destService := flow.Destination.ServiceName
+			if destService == "" {
+				destService = "unknown"
+			}
+			destPod := flow.Destination.PodName
+			if destPod == "" {
+				destPod = "unknown"
+			}
+			m.NamespaceAccess.WithLabelValues(sourceNS, destNS, destService, destPod).Inc()
+		}
+	}
+
+	// Suspicious outbound tracking - track connections to suspicious ports
+	if flow.L4 != nil {
+		var destPort int
+		if flow.L4.TCP != nil {
+			destPort = int(flow.L4.TCP.DestinationPort)
+		} else if flow.L4.UDP != nil {
+			destPort = int(flow.L4.UDP.DestinationPort)
+		}
+
+		// Check if port is suspicious
+		suspiciousPorts := map[int]bool{
+			22:   false, // SSH - may be suspicious depending on context
+			23:   true,  // Telnet - suspicious
+			135:  true,  // RPC - suspicious
+			445:  true,  // SMB - suspicious
+			1433: true,  // SQL Server - suspicious
+			3306: true,  // MySQL - suspicious
+			5432: true,  // PostgreSQL - suspicious
+		}
+
+		if suspiciousPorts[destPort] {
+			namespace := "unknown"
+			if flow.Source != nil && flow.Source.Namespace != "" {
+				namespace = flow.Source.Namespace
+			} else if flow.Destination != nil && flow.Destination.Namespace != "" {
+				namespace = flow.Destination.Namespace
+			}
+			m.SuspiciousOutbound.WithLabelValues(namespace, fmt.Sprintf("%d", destPort)).Inc()
+		}
 	}
 }
 

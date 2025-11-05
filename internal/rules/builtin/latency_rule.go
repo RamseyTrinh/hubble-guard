@@ -2,7 +2,6 @@ package builtin
 
 import (
 	"context"
-	"sync"
 
 	"hubble-anomaly-detector/internal/model"
 
@@ -15,7 +14,6 @@ type LatencyRule struct {
 	enabled  bool
 	severity string
 	logger   *logrus.Logger
-	mu       sync.RWMutex
 }
 
 // NewLatencyRule creates a new latency rule

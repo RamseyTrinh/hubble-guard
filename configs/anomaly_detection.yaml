@@ -27,7 +27,6 @@ rules:
     enabled: true
     severity: "CRITICAL"
     description: "Phát hiện traffic spike có thể là DDoS"
-    type: "prometheus"
     thresholds:
       multiplier: 3.0
   
@@ -35,13 +34,11 @@ rules:
     enabled: true
     severity: "HIGH"
     description: "Phát hiện kết nối đến destination mới"
-    type: "prometheus"
   
   - name: "tcp_reset_surge"
     enabled: true
     severity: "HIGH"
     description: "Phát hiện surge TCP resets"
-    type: "prometheus"
     thresholds:
       per_minute: 10
   
@@ -49,7 +46,6 @@ rules:
     enabled: true
     severity: "HIGH"
     description: "Phát hiện surge TCP drops"
-    type: "prometheus"
     thresholds:
       per_minute: 10
   
@@ -57,7 +53,6 @@ rules:
     enabled: true
     severity: "MEDIUM"
     description: "Phát hiện bandwidth cao bất thường"
-    type: "prometheus"
     thresholds:
       bytes_per_second: 1000000
   
@@ -65,7 +60,6 @@ rules:
     enabled: true
     severity: "HIGH"
     description: "Phát hiện port scanning"
-    type: "prometheus"
     thresholds:
       ports_per_minute: 50
   
@@ -73,7 +67,6 @@ rules:
     enabled: true
     severity: "HIGH"
     description: "Phát hiện blocked connections (DROP flows)"
-    type: "prometheus"
     thresholds:
       per_minute: 10
   
@@ -81,9 +74,25 @@ rules:
     enabled: true
     severity: "HIGH"
     description: "Phát hiện port scanning attacks"
-    type: "prometheus"
     thresholds:
       distinct_ports: 10
+  
+  - name: "namespace_access"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm (kube-system, monitoring, security) và truy cập kube-dns"
+    thresholds:
+      forbidden_namespaces:
+        - "kube-system"
+        - "monitoring"
+        - "security"
+  
+  - name: "suspicious_outbound"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện các kết nối outbound đáng ngờ đến các port như Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
+    thresholds:
+      per_minute: 10
 
 alerting:
   enabled: true

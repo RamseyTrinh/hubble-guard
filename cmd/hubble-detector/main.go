@@ -19,7 +19,6 @@ import (
 )
 
 func main() {
-	// Parse command line flags
 	var (
 		configFile   = flag.String("config", "configs/anomaly_detection.yaml", "Configuration file path (YAML)")
 		showVersion  = flag.Bool("version", false, "Show version information")
@@ -42,24 +41,19 @@ func main() {
 	var yamlConfig *utils.AnomalyDetectionConfig
 	var config *utils.DefaultConfig
 
-	// Try to load from YAML first
 	yamlConfig, err := utils.LoadAnomalyDetectionConfig(*configFile)
 	if err != nil {
-		// Fallback to default config if YAML fails
 		fmt.Printf("Failed to load YAML config %s: %v\n", *configFile, err)
 		fmt.Println("Using default configuration...")
 		config = utils.GetDefaultConfig()
 	} else {
-		// Convert YAML config to DefaultConfig for compatibility
 		config = yamlConfig.ToDefaultConfig()
 		fmt.Printf("✅ Loaded configuration from %s\n", *configFile)
 	}
 
-	// Get values from config
 	var hubbleServer, prometheusPort, namespace string
 	if yamlConfig != nil {
 		hubbleServer = yamlConfig.Application.HubbleServer
-		// Extract port from PrometheusExportURL
 		prometheusPort = yamlConfig.Application.PrometheusExportURL
 		if strings.Contains(prometheusPort, ":") {
 			parts := strings.Split(prometheusPort, ":")
@@ -87,18 +81,15 @@ func main() {
 	}
 	fmt.Println("")
 
-	// Create logger
 	logger := utils.NewLogger(config.Logging.Level)
 	logger.SetLevel(logrus.InfoLevel)
 
-	// Create Prometheus exporter
 	exporter, err := alert.StartPrometheusExporterWithCustomRegistry(prometheusPort, logger)
 	if err != nil {
 		fmt.Printf("Failed to create Prometheus exporter: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Start Prometheus exporter in background
 	exporterCtx, exporterCancel := context.WithCancel(context.Background())
 	go func() {
 		if err := exporter.Start(exporterCtx); err != nil {
@@ -106,7 +97,6 @@ func main() {
 		}
 	}()
 
-	// Create gRPC client with metrics
 	hubbleClient, err := client.NewHubbleGRPCClientWithMetrics(hubbleServer, exporter.GetMetrics())
 	if err != nil {
 		fmt.Printf("Failed to create client: %v\n", err)
@@ -116,7 +106,6 @@ func main() {
 	defer hubbleClient.Close()
 	defer exporterCancel()
 
-	// Create Prometheus client for rules
 	promClient, err := client.NewPrometheusClient(config.Prometheus.URL)
 	if err != nil {
 		fmt.Printf("Warning: Failed to create Prometheus client: %v\n", err)
@@ -124,22 +113,16 @@ func main() {
 		promClient = nil
 	}
 
-	// Create rule engine
 	engine := rules.NewEngine(logger)
 
-	// Register builtin rules (query from Prometheus)
 	if yamlConfig != nil {
-		// Use YAML config with rules array
 		utils.RegisterBuiltinRulesFromYAML(engine, yamlConfig, logger, promClient)
 	} else {
-		// Use JSON config (backward compatibility)
 		utils.RegisterBuiltinRules(engine, config, logger, promClient)
 	}
 
-	// Register alert notifiers
 	registerAlertNotifiers(engine, config, yamlConfig, logger)
 
-	// Test connection (optional)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := hubbleClient.TestConnection(ctx); err != nil {
 		fmt.Printf("Warning: Connection test failed: %v\n", err)
@@ -147,34 +130,27 @@ func main() {
 	}
 	cancel()
 
-	// Get namespaces from config
 	var namespaces []string
 	if yamlConfig != nil && len(yamlConfig.Namespaces) > 0 {
 		namespaces = yamlConfig.Namespaces
 	} else if len(config.Detection.Namespaces) > 0 {
 		namespaces = config.Detection.Namespaces
 	} else {
-		// Fallback to default namespace if no namespaces configured
 		namespaces = []string{namespace}
 	}
 
-	// Show menu and handle user choice
 	streamFlowsToPrometheus(hubbleClient, namespaces, engine, logger, config)
 
 }
 
-// registerAlertNotifiers registers alert notifiers with the engine
 func registerAlertNotifiers(engine *rules.Engine, config *utils.DefaultConfig, yamlConfig *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
-	// Log notifier
 	if config.Alerting.Channels.Log {
 		logNotifier := alert.NewLogAlertNotifier(logger)
 		engine.RegisterNotifier(logNotifier)
 	}
 
-	// Telegram notifier
 	if config.Alerting.Channels.Telegram && config.Alerting.Telegram.Enabled {
 		messageTemplate := ""
-		// Try to get message template from YAML config if available
 		if yamlConfig != nil && yamlConfig.Alerting.Telegram.MessageTemplate != "" {
 			messageTemplate = yamlConfig.Alerting.Telegram.MessageTemplate
 		}
@@ -191,8 +167,6 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.DefaultConfig, y
 	}
 }
 
-// streamFlowsToPrometheus streams flows and sends metrics to Prometheus
-// Rules will query Prometheus separately, not process individual flows
 func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.DefaultConfig) {
 	fmt.Println("\nANOMALY DETECTION MODE (Prometheus-based)")
 	fmt.Println("Press Ctrl+C to return to main menu")
@@ -213,7 +187,6 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 		cancel()
 	}()
 
-	// Start alert processor
 	go func() {
 		alertChannel := engine.GetAlertChannel()
 		for {
@@ -242,11 +215,8 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 	fmt.Println("✅ Flow collection started!")
 	fmt.Println("")
 
-	// Stream flows - ONLY to send metrics to Prometheus, NOT for rule evaluation
-	// Rules will query Prometheus separately
 	err := hubbleClient.StreamFlowsWithMetricsOnly(ctx, namespaces, func(ns string) {
-		// Just count flows, rules will query from Prometheus
-	}, nil) // No flow processor - rules don't process individual flows
+	}, nil)
 	if err != nil {
 		if err == context.Canceled {
 			fmt.Println("Flow collection stopped by user")
@@ -256,14 +226,11 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 	}
 }
 
-// testTelegramNotification test gửi thông báo qua Telegram
 func testTelegramNotification(configFile string) {
 	var config *utils.DefaultConfig
 
-	// Try to load from YAML first
 	yamlConfig, err := utils.LoadAnomalyDetectionConfig(configFile)
 	if err != nil {
-		// Fallback to default config if YAML fails
 		fmt.Printf("Failed to load config file %s: %v\n", configFile, err)
 		fmt.Println("Using default configuration...")
 		config = utils.GetDefaultConfig()
@@ -294,10 +261,4 @@ func testTelegramNotification(configFile string) {
 	}
 
 	fmt.Println("✅ Test message sent successfully to Telegram!")
-}
-
-// fileExists checks if a file exists
-func fileExists(filename string) bool {
-	_, err := os.Stat(filename)
-	return err == nil
 }

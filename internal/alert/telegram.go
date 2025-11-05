@@ -15,7 +15,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TelegramNotifier xử lý việc gửi thông báo qua Telegram
 type TelegramNotifier struct {
 	botToken        string
 	chatID          string
@@ -26,25 +25,21 @@ type TelegramNotifier struct {
 	logger          *logrus.Logger
 }
 
-// TelegramMessage cấu trúc message gửi đến Telegram API
 type TelegramMessage struct {
 	ChatID    string `json:"chat_id"`
 	Text      string `json:"text"`
 	ParseMode string `json:"parse_mode,omitempty"`
 }
 
-// TelegramResponse cấu trúc response từ Telegram API
 type TelegramResponse struct {
 	OK          bool   `json:"ok"`
 	Description string `json:"description,omitempty"`
 }
 
-// NewTelegramNotifier tạo instance mới của TelegramNotifier
 func NewTelegramNotifier(botToken, chatID, parseMode string, enabled bool, logger *logrus.Logger) *TelegramNotifier {
 	return NewTelegramNotifierWithTemplate(botToken, chatID, parseMode, enabled, "", logger)
 }
 
-// NewTelegramNotifierWithTemplate tạo instance mới với message template
 func NewTelegramNotifierWithTemplate(botToken, chatID, parseMode string, enabled bool, messageTemplate string, logger *logrus.Logger) *TelegramNotifier {
 	tn := &TelegramNotifier{
 		botToken:  botToken,
@@ -57,9 +52,7 @@ func NewTelegramNotifierWithTemplate(botToken, chatID, parseMode string, enabled
 		logger: logger,
 	}
 
-	// Parse message template nếu có
 	if messageTemplate != "" && strings.TrimSpace(messageTemplate) != "" {
-		// Thêm custom functions cho template
 		funcMap := template.FuncMap{
 			"formatTime": func(t time.Time, layout string) string {
 				return t.Format(layout)
@@ -76,7 +69,6 @@ func NewTelegramNotifierWithTemplate(botToken, chatID, parseMode string, enabled
 	return tn
 }
 
-// SendAlert implements Notifier interface - gửi alert qua Telegram với retry logic
 func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 	if !tn.enabled {
 		tn.logger.Debug("Telegram notifier is disabled, skipping alert")
@@ -102,9 +94,7 @@ func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 	return fmt.Errorf("failed to send alert after %d attempts", maxRetries)
 }
 
-// formatAlertMessage format alert thành message cho Telegram
 func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
-	// Nếu có template, sử dụng template
 	if tn.messageTemplate != nil {
 		var buf bytes.Buffer
 		err := tn.messageTemplate.Execute(&buf, alert)
@@ -115,7 +105,6 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 		}
 	}
 
-	// Format mặc định
 	timestamp := alert.Timestamp.Format("2006-01-02 15:04:05")
 	message := fmt.Sprintf("🚨 *%s Alert*\n\n*Type:* %s\n*Time:* %s\n*Message:* %s",
 		alert.Severity,
@@ -123,7 +112,6 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 		timestamp,
 		alert.Message)
 
-	// Thêm thông tin flow nếu có
 	if alert.FlowData != nil {
 		if alert.FlowData.Source != nil {
 			message += fmt.Sprintf("\n*Source:* %s/%s", alert.FlowData.Source.Namespace, alert.FlowData.Source.PodName)
@@ -136,7 +124,6 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 	return message
 }
 
-// sendMessage gửi message đến Telegram API
 func (tn *TelegramNotifier) sendMessage(text string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tn.botToken)
 
@@ -177,7 +164,6 @@ func (tn *TelegramNotifier) sendMessage(text string) error {
 	return nil
 }
 
-// SendTestMessage gửi message test để kiểm tra kết nối
 func (tn *TelegramNotifier) SendTestMessage() error {
 	if !tn.enabled {
 		return fmt.Errorf("telegram notifier is disabled")
@@ -187,12 +173,10 @@ func (tn *TelegramNotifier) SendTestMessage() error {
 	return tn.sendMessage(message)
 }
 
-// IsEnabled kiểm tra xem Telegram notifier có được enable không
 func (tn *TelegramNotifier) IsEnabled() bool {
 	return tn.enabled
 }
 
-// UpdateConfig cập nhật cấu hình Telegram
 func (tn *TelegramNotifier) UpdateConfig(botToken, chatID, parseMode string, enabled bool) {
 	tn.botToken = botToken
 	tn.chatID = chatID

@@ -11,8 +11,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// PortScanRule detects port scanning attacks by querying Prometheus metrics
-// Alerts when portscan_distinct_ports_10s > threshold
 type PortScanRule struct {
 	name          string
 	enabled       bool
@@ -25,7 +23,6 @@ type PortScanRule struct {
 	alertEmitter  func(*model.Alert)
 }
 
-// NewPortScanRule creates a new Port Scan rule that queries Prometheus
 func NewPortScanRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *PortScanRule {
 	if threshold <= 0 {
 		threshold = 10.0
@@ -42,22 +39,18 @@ func NewPortScanRule(enabled bool, severity string, threshold float64, promClien
 	}
 }
 
-// SetAlertEmitter sets the function to emit alerts
 func (r *PortScanRule) SetAlertEmitter(emitter func(*model.Alert)) {
 	r.alertEmitter = emitter
 }
 
-// Name returns the rule name
 func (r *PortScanRule) Name() string {
 	return r.name
 }
 
-// IsEnabled returns whether the rule is enabled
 func (r *PortScanRule) IsEnabled() bool {
 	return r.enabled
 }
 
-// Start begins periodic checking from Prometheus
 func (r *PortScanRule) Start(ctx context.Context) {
 	if !r.enabled {
 		return
@@ -136,7 +129,6 @@ func (r *PortScanRule) checkFromPrometheus(ctx context.Context) {
 				Timestamp: time.Now(),
 			}
 			r.logger.Warnf("Port Scan Rule Alert: %s", alert.Message)
-			// Emit alert through emitter function
 			if r.alertEmitter != nil {
 				r.alertEmitter(alert)
 			}

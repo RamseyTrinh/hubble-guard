@@ -11,17 +11,15 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// NewDestinationRule detects connections to new destinations
 type NewDestinationRule struct {
-	name           string
-	enabled        bool
-	severity       string
-	knownDest      map[string]map[string]bool // namespace -> destIP -> true
-	logger         *logrus.Logger
-	mu             sync.RWMutex
+	name      string
+	enabled   bool
+	severity  string
+	knownDest map[string]map[string]bool // namespace -> destIP -> true
+	logger    *logrus.Logger
+	mu        sync.RWMutex
 }
 
-// NewNewDestinationRule creates a new destination rule
 func NewNewDestinationRule(enabled bool, severity string, logger *logrus.Logger) *NewDestinationRule {
 	return &NewDestinationRule{
 		name:      "new_destination",
@@ -32,17 +30,14 @@ func NewNewDestinationRule(enabled bool, severity string, logger *logrus.Logger)
 	}
 }
 
-// Name returns the rule name
 func (r *NewDestinationRule) Name() string {
 	return r.name
 }
 
-// IsEnabled returns whether the rule is enabled
 func (r *NewDestinationRule) IsEnabled() bool {
 	return r.enabled
 }
 
-// Evaluate evaluates the rule against a flow
 func (r *NewDestinationRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
 	if !r.enabled || flow == nil || flow.IP == nil {
 		return nil
@@ -64,7 +59,6 @@ func (r *NewDestinationRule) Evaluate(ctx context.Context, flow *model.Flow) *mo
 		r.knownDest[namespace] = make(map[string]bool)
 	}
 
-	// Check if this is a new destination
 	if !r.knownDest[namespace][destIP] {
 		r.knownDest[namespace][destIP] = true
 
@@ -81,4 +75,3 @@ func (r *NewDestinationRule) Evaluate(ctx context.Context, flow *model.Flow) *mo
 
 	return nil
 }
-

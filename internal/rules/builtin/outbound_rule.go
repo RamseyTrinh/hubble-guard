@@ -8,131 +8,157 @@ import (
 
 	"hubble-anomaly-detector/internal/model"
 
+	prommodel "github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
 )
 
-// OutboundRule detects suspicious outbound connections
 type OutboundRule struct {
 	name            string
 	enabled         bool
 	severity        string
+	threshold       float64
 	suspiciousPorts map[int]bool
-	portCounts      map[string]map[int]int64 // namespace -> port -> count
-	lastReset       map[string]time.Time
-	threshold       int64
+	prometheusAPI   PrometheusQueryClient
 	logger          *logrus.Logger
 	mu              sync.RWMutex
+	interval        time.Duration
+	stopChan        chan struct{}
+	alertEmitter    func(*model.Alert)
+	namespaces      []string
 }
 
-// NewOutboundRule creates a new outbound rule
-func NewOutboundRule(enabled bool, severity string, threshold int64, logger *logrus.Logger) *OutboundRule {
+func NewOutboundRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *OutboundRule {
 	if threshold <= 0 {
-		threshold = 10 // default 10 connections per minute
+		threshold = 10.0
 	}
 
 	suspiciousPorts := map[int]bool{
-		22:   false, // SSH
-		23:   true,  // Telnet
-		135:  true,  // MS-RPC
-		445:  true,  // SMB
-		1433: true,  // SQL Server
-		3306: true,  // MySQL
-		5432: true,  // PostgreSQL
+		22:   false, // SSH - may be suspicious depending on context
+		23:   true,  // Telnet - suspicious
+		135:  true,  // RPC - suspicious
+		445:  true,  // SMB - suspicious
+		1433: true,  // SQL Server - suspicious
+		3306: true,  // MySQL - suspicious
+		5432: true,  // PostgreSQL - suspicious
 	}
 
 	return &OutboundRule{
 		name:            "suspicious_outbound",
 		enabled:         enabled,
 		severity:        severity,
-		suspiciousPorts: suspiciousPorts,
-		portCounts:      make(map[string]map[int]int64),
-		lastReset:       make(map[string]time.Time),
 		threshold:       threshold,
+		suspiciousPorts: suspiciousPorts,
+		prometheusAPI:   promClient,
 		logger:          logger,
+		interval:        10 * time.Second,
+		stopChan:        make(chan struct{}),
+		namespaces:      []string{"default", "kube-system"},
 	}
 }
 
-// Name returns the rule name
+func (r *OutboundRule) SetAlertEmitter(emitter func(*model.Alert)) {
+	r.alertEmitter = emitter
+}
+
+func (r *OutboundRule) SetNamespaces(namespaces []string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.namespaces = namespaces
+}
+
 func (r *OutboundRule) Name() string {
 	return r.name
 }
 
-// IsEnabled returns whether the rule is enabled
 func (r *OutboundRule) IsEnabled() bool {
 	return r.enabled
 }
 
-// Evaluate evaluates the rule against a flow
-func (r *OutboundRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
-	if !r.enabled || flow == nil || flow.L4 == nil {
-		return nil
+func (r *OutboundRule) Start(ctx context.Context) {
+	if !r.enabled {
+		return
 	}
 
-	var destPort int
-	if flow.L4.TCP != nil {
-		destPort = int(flow.L4.TCP.DestinationPort)
-	} else if flow.L4.UDP != nil {
-		destPort = int(flow.L4.UDP.DestinationPort)
-	} else {
-		return nil
-	}
+	ticker := time.NewTicker(r.interval)
+	defer ticker.Stop()
 
-	// Check if port is marked as suspicious
-	if !r.suspiciousPorts[destPort] {
-		return nil
-	}
+	r.logger.Infof("[Suspicious Outbound] Starting periodic checks from Prometheus (interval: %v, threshold: %.0f)", r.interval, r.threshold)
 
-	namespace := "unknown"
-	if flow.Source != nil && flow.Source.Namespace != "" {
-		namespace = flow.Source.Namespace
-	} else if flow.Destination != nil && flow.Destination.Namespace != "" {
-		namespace = flow.Destination.Namespace
-	}
-
-	r.mu.Lock()
-	if r.portCounts[namespace] == nil {
-		r.portCounts[namespace] = make(map[int]int64)
-	}
-	r.portCounts[namespace][destPort]++
-	lastReset, exists := r.lastReset[namespace]
-	if !exists {
-		lastReset = time.Now()
-		r.lastReset[namespace] = lastReset
-	}
-	r.mu.Unlock()
-
-	// Check every minute
-	now := time.Now()
-	if now.Sub(lastReset) >= 1*time.Minute {
-		alert := r.checkSuspiciousPorts(namespace)
-		r.mu.Lock()
-		r.portCounts[namespace] = make(map[int]int64)
-		r.lastReset[namespace] = now
-		r.mu.Unlock()
-		if alert != nil {
-			return alert
+	for {
+		select {
+		case <-ticker.C:
+			r.checkFromPrometheus(ctx)
+		case <-ctx.Done():
+			r.logger.Info("[Suspicious Outbound] Stopping periodic checks")
+			return
+		case <-r.stopChan:
+			r.logger.Info("[Suspicious Outbound] Rule stopped")
+			return
 		}
 	}
+}
 
+func (r *OutboundRule) Stop() {
+	close(r.stopChan)
+}
+
+func (r *OutboundRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
 	return nil
 }
 
-func (r *OutboundRule) checkSuspiciousPorts(namespace string) *model.Alert {
+func (r *OutboundRule) checkFromPrometheus(ctx context.Context) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	namespaces := r.namespaces
+	suspiciousPorts := make(map[int]bool)
+	for port, val := range r.suspiciousPorts {
+		suspiciousPorts[port] = val
+	}
+	r.mu.RUnlock()
 
-	for port, count := range r.portCounts[namespace] {
+	if len(namespaces) == 0 {
+		namespaces = []string{"default", "kube-system"}
+	}
+
+	for _, namespace := range namespaces {
+		r.checkNamespace(ctx, namespace, suspiciousPorts)
+	}
+}
+
+func (r *OutboundRule) checkNamespace(ctx context.Context, namespace string, suspiciousPorts map[int]bool) {
+	for port, isSuspicious := range suspiciousPorts {
+		if !isSuspicious {
+			continue
+		}
+
+		query := fmt.Sprintf(`sum(increase(hubble_suspicious_outbound_total{namespace="%s", destination_port="%d"}[1m]))`, namespace, port)
+
+		result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
+		if err != nil {
+			r.logger.Errorf("[Suspicious Outbound] Failed to query Prometheus for namespace %s, port %d: %v", namespace, port, err)
+			continue
+		}
+
+		var count float64
+		if vector, ok := result.(prommodel.Vector); ok && len(vector) > 0 {
+			count = float64(vector[0].Value)
+		} else {
+			r.logger.Debugf("[Suspicious Outbound] No suspicious outbound connections from Prometheus for namespace %s, port %d", namespace, port)
+			continue
+		}
+
+		r.logger.Debugf("[Suspicious Outbound] Namespace: %s | Port: %d | Connections in last 1m: %.0f (threshold: %.0f)", namespace, port, count, r.threshold)
+
 		if count > r.threshold {
 			alert := &model.Alert{
 				Type:      r.name,
 				Severity:  r.severity,
-				Message:   fmt.Sprintf("Suspicious outbound connection detected in namespace %s: %d connections to port %d in 1 minute (threshold: %d)", namespace, count, port, r.threshold),
+				Message:   fmt.Sprintf("Suspicious outbound connection detected in namespace %s: %.0f connections to port %d in 1 minute (threshold: %.0f)", namespace, count, port, r.threshold),
 				Timestamp: time.Now(),
 			}
-
-			r.logger.Warnf("Outbound Rule Alert: %s", alert.Message)
-			return alert
+			r.logger.Warnf("Suspicious Outbound Rule Alert: %s", alert.Message)
+			if r.alertEmitter != nil {
+				r.alertEmitter(alert)
+			}
 		}
 	}
-	return nil
 }

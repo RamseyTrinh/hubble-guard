@@ -384,21 +384,88 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				logger.Infof("Registered rule: %s (threshold: %.0f distinct ports in 10s)", ruleConfig.Name, threshold)
 			}
 
+		case "suspicious_outbound", "outbound":
+			if promClient != nil {
+				threshold := 10.0
+				if thresholds, ok := ruleConfig.Thresholds["per_minute"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["per_minute"].(int); ok {
+					threshold = float64(thresholds)
+				} else if thresholds, ok := ruleConfig.Thresholds["threshold"].(float64); ok {
+					threshold = thresholds
+				} else if thresholds, ok := ruleConfig.Thresholds["threshold"].(int); ok {
+					threshold = float64(thresholds)
+				}
+
+				outboundRule := builtin.NewOutboundRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				outboundRule.SetNamespaces(yamlConfig.Namespaces)
+				outboundRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(outboundRule)
+				ctx := context.Background()
+				go outboundRule.Start(ctx)
+				logger.Infof("Registered rule: %s (threshold: %.0f connections per minute)", ruleConfig.Name, threshold)
+			}
+
+		case "namespace_access", "unauthorized_namespace_access":
+			if promClient != nil {
+				var forbiddenNS []string
+				if thresholds, ok := ruleConfig.Thresholds["forbidden_namespaces"].([]interface{}); ok {
+					for _, ns := range thresholds {
+						if nsStr, ok := ns.(string); ok {
+							forbiddenNS = append(forbiddenNS, nsStr)
+						}
+					}
+				} else if thresholds, ok := ruleConfig.Thresholds["forbidden_namespaces"].([]string); ok {
+					forbiddenNS = thresholds
+				}
+
+				if len(forbiddenNS) == 0 {
+					for _, condition := range ruleConfig.Conditions {
+						if condition.Field == "forbidden_namespaces" {
+							if nsList, ok := condition.Value.([]interface{}); ok {
+								for _, ns := range nsList {
+									if nsStr, ok := ns.(string); ok {
+										forbiddenNS = append(forbiddenNS, nsStr)
+									}
+								}
+							} else if nsList, ok := condition.Value.([]string); ok {
+								forbiddenNS = nsList
+							}
+						}
+					}
+				}
+
+				nsAccessRule := builtin.NewNamespaceAccessRule(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
+				if len(forbiddenNS) > 0 {
+					nsAccessRule.SetForbiddenNamespaces(forbiddenNS)
+				} else {
+					defaultForbiddenNS := []string{"kube-system", "monitoring", "security"}
+					nsAccessRule.SetForbiddenNamespaces(defaultForbiddenNS)
+					logger.Warnf("No forbidden namespaces configured for namespace_access rule, using defaults: %v", defaultForbiddenNS)
+				}
+				nsAccessRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(nsAccessRule)
+				ctx := context.Background()
+				go nsAccessRule.Start(ctx)
+				logger.Infof("Registered rule: %s (forbidden namespaces: %v)", ruleConfig.Name, forbiddenNS)
+			}
+
 		default:
 			logger.Warnf("Unknown rule type: %s", ruleConfig.Name)
 		}
 	}
 }
 
-// RegisterBuiltinRules registers rules from JSON config (backward compatibility)
 func RegisterBuiltinRules(engine *rules.Engine, config *DefaultConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
-	// DDoS rule - query from Prometheus
 	if ruleConfig, exists := config.GetRuleConfig("traffic_spike"); exists && promClient != nil {
 		threshold := 3.0
 		if ruleConfig.ThresholdMultiplier != nil {
 			threshold = *ruleConfig.ThresholdMultiplier
 		}
-		// Use Prometheus-based rule
 		promRule := builtin.NewDDoSRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
 		promRule.SetNamespaces(config.Detection.Namespaces)
 		promRule.SetAlertEmitter(func(alert *model.Alert) {
@@ -406,12 +473,9 @@ func RegisterBuiltinRules(engine *rules.Engine, config *DefaultConfig, logger *l
 		})
 		if promRule.IsEnabled() {
 			engine.RegisterRule(promRule)
-			// Start periodic checking in background
 			ctx := context.Background()
 			go promRule.Start(ctx)
 		}
 	}
 
-	// Other rules from JSON config...
-	// (Keep existing logic for backward compatibility)
 }
