@@ -6,9 +6,9 @@
 BINARY_NAME=hubble-anomaly-detector
 BUILD_DIR=build
 VERSION=1.0.0
-DOCKER_REGISTRY=docker.io
-DOCKER_USERNAME=ramseytrinh3338
-
+DOCKER_REGISTRY=docker.io/ramseytrinh338
+DOCKER_USERNAME=ramseytrinh338
+DOCKER_PASSWORD=Hoangcn8uetvnu$
 
 # Default target
 all: build
@@ -97,11 +97,17 @@ docker-build:
 	@echo "Docker image built: hubble-anomaly-detector:$(VERSION)"
 
 # Docker push (set DOCKER_REGISTRY env var)
-docker-push: docker-build
+docker-push:
 	@if [ -z "$(DOCKER_REGISTRY)" ]; then \
 		echo "Error: DOCKER_REGISTRY not set"; \
 		exit 1; \
 	fi
+	@if [ -z "$(DOCKER_USERNAME)" ] || [ -z "$(DOCKER_PASSWORD)" ]; then \
+		echo "Error: DOCKER_USERNAME or DOCKER_PASSWORD not set"; \
+		exit 1; \
+	fi
+	@echo "Logging in to registry $(DOCKER_REGISTRY)..."
+	@echo "$(DOCKER_PASSWORD)" | docker login $(DOCKER_REGISTRY) -u "$(DOCKER_USERNAME)" --password-stdin
 	@echo "Tagging and pushing image..."
 	@docker tag hubble-anomaly-detector:$(VERSION) $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)
 	@docker tag hubble-anomaly-detector:$(VERSION) $(DOCKER_REGISTRY)/hubble-anomaly-detector:latest
