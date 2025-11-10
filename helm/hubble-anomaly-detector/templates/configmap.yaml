@@ -37,11 +37,20 @@ data:
         enabled: {{ .enabled }}
         severity: {{ .severity | quote }}
         description: {{ .description | quote }}
+        {{- if .type }}
         type: {{ .type | quote }}
+        {{- end }}
         {{- if .thresholds }}
         thresholds:
         {{- range $key, $value := .thresholds }}
+          {{- if kindIs "slice" $value }}
+          {{ $key }}:
+            {{- range $value }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- else }}
           {{ $key }}: {{ $value }}
+          {{- end }}
         {{- end }}
         {{- end }}
     {{- end }}
@@ -63,7 +72,7 @@ data:
         enabled: {{ .Values.alerting.telegram.enabled }}
         {{- if .Values.alerting.telegram.message_template }}
         message_template: |
-{{ .Values.alerting.telegram.message_template | indent 10 }}
+{{- .Values.alerting.telegram.message_template | indent 10 }}
         {{- end }}
     
     logging:

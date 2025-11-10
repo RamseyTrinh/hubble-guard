@@ -73,6 +73,41 @@ rules:
     type: "prometheus"
     thresholds:
       ports_per_minute: 50
+  
+  - name: "block_connection"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện blocked connections (DROP flows)"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
+  
+  - name: "port_scan"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện port scanning attacks"
+    type: "prometheus"
+    thresholds:
+      distinct_ports: 10
+  
+  - name: "namespace_access"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm (kube-system, monitoring, security) và truy cập kube-dns"
+    type: "prometheus"
+    thresholds:
+      forbidden_namespaces:
+        - "kube-system"
+        - "monitoring"
+        - "security"
+  
+  - name: "suspicious_outbound"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện các kết nối outbound đáng ngờ đến các port như Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
+    type: "prometheus"
+    thresholds:
+      per_minute: 10
 
 # Alerting configuration
 alerting:
@@ -121,7 +156,7 @@ autoscaling:
   targetMemoryUtilizationPercentage: 80
 
 image:
-  repository: hubble-anomaly-detector
+  repository: hubble-anomaly-detector  # Change to your registry, e.g., "registry.example.com/hubble-anomaly-detector"
   pullPolicy: IfNotPresent
   tag: "1.0.0"
 
@@ -143,13 +178,14 @@ podAnnotations: {}
 podSecurityContext: {}
   # fsGroup: 2000
 
-securityContext: {}
-  # capabilities:
-  #   drop:
-  #   - ALL
-  # readOnlyRootFilesystem: true
-  # runAsNonRoot: true
-  # runAsUser: 1000
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false  # Set to false if app needs to write logs
+  capabilities:
+    drop:
+    - ALL
 
 resources:
   limits:

@@ -6,6 +6,9 @@
 BINARY_NAME=hubble-anomaly-detector
 BUILD_DIR=build
 VERSION=1.0.0
+DOCKER_REGISTRY=docker.io
+DOCKER_USERNAME=ramseytrinh3338
+
 
 # Default target
 all: build
