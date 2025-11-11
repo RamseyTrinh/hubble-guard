@@ -200,7 +200,7 @@ prometheus:
   
   image:
     repository: prom/prometheus
-    tag: "latest"
+    tag: "v3.7.3"
     pullPolicy: IfNotPresent
   
   imagePullSecrets: []

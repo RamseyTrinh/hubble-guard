@@ -8,7 +8,6 @@ BUILD_DIR=build
 VERSION=1.0.0
 DOCKER_REGISTRY=docker.io/ramseytrinh338
 DOCKER_USERNAME=ramseytrinh338
-DOCKER_PASSWORD=Hoangcn8uetvnu$
 
 # Default target
 all: build
