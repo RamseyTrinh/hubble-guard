@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hubble-guard.grafana.serviceName" . }}
+  namespace: hubble-guard
+  labels:
+    {{- include "hubble-guard.grafana.labels" . | nindent 4 }}
+  {{- with .Values.grafana.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.grafana.service.type }}
+  ports:
+    - port: {{ .Values.grafana.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "hubble-guard.grafana.selectorLabels" . | nindent 4 }}
+

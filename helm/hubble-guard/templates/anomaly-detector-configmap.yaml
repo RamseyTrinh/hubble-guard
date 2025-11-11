@@ -1,9 +1,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "hubble-anomaly-detector.fullname" . }}-config
+  name: {{ include "hubble-guard.fullname" . }}-anomaly-detector-config
+  namespace: hubble-guard
   labels:
-    {{- include "hubble-anomaly-detector.labels" . | nindent 4 }}
+    {{- include "hubble-guard.anomalyDetector.labels" . | nindent 4 }}
 data:
   anomaly_detection.yaml: |
     # Anomaly Detection Configuration
@@ -16,10 +17,10 @@ data:
       auto_start: {{ .Values.application.auto_start }}
     
     prometheus:
-      url: {{ .Values.prometheus.url | quote }}
-      timeout_seconds: {{ .Values.prometheus.timeout_seconds }}
-      retry_attempts: {{ .Values.prometheus.retry_attempts }}
-      retry_delay_seconds: {{ .Values.prometheus.retry_delay_seconds }}
+      url: {{ if .Values.prometheusConfig.url }}{{ .Values.prometheusConfig.url | quote }}{{ else }}{{ printf "http://%s:%d" (include "hubble-guard.prometheus.serviceName" .) .Values.prometheus.service.port | quote }}{{ end }}
+      timeout_seconds: {{ .Values.prometheusConfig.timeout_seconds }}
+      retry_attempts: {{ .Values.prometheusConfig.retry_attempts }}
+      retry_delay_seconds: {{ .Values.prometheusConfig.retry_delay_seconds }}
     
     namespaces:
     {{- range .Values.namespaces }}
@@ -72,7 +73,7 @@ data:
         enabled: {{ .Values.alerting.telegram.enabled }}
         {{- if .Values.alerting.telegram.message_template }}
         message_template: |
-{{- .Values.alerting.telegram.message_template | indent 10 }}
+{{ .Values.alerting.telegram.message_template | indent 10 }}
         {{- end }}
     
     logging:

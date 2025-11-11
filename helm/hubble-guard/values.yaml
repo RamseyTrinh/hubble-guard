@@ -1,4 +1,4 @@
-# Default values for hubble-anomaly-detector
+# Default values for hubble-guard
 # This is a YAML-formatted file.
 
 # Application configuration
@@ -8,9 +8,10 @@ application:
   default_namespace: "default"
   auto_start: false
 
-# Prometheus configuration
-prometheus:
-  url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+# Prometheus configuration (for anomaly detector to connect to)
+# Note: URL will be dynamically set based on service name
+prometheusConfig:
+  url: ""  # Will be set to http://<prometheus-service-name>:9090
   timeout_seconds: 10
   retry_attempts: 3
   retry_delay_seconds: 5
@@ -145,84 +146,146 @@ logging:
   format: "json"
   file_path: "/var/log/anomaly-detector.log"
 
-# Kubernetes deployment configuration
-replicaCount: 1
+# Anomaly Detector configuration
+anomalyDetector:
+  replicaCount: 1
+  
+  image:
+    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    pullPolicy: IfNotPresent
+    tag: "1.0.0"
+  
+  imagePullSecrets: []
+  
+  podAnnotations: {}
+  
+  podSecurityContext: {}
+  
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+      - ALL
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  nodeSelector: {}
+  
+  tolerations: []
+  
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
 
-autoscaling:
-  enabled: false
-  minReplicas: 1
-  maxReplicas: 3
-  targetCPUUtilizationPercentage: 80
-  targetMemoryUtilizationPercentage: 80
+# Prometheus configuration
+prometheus:
+  replicaCount: 1
+  
+  image:
+    repository: prom/prometheus
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  
+  imagePullSecrets: []
+  
+  podAnnotations: {}
+  
+  podSecurityContext: {}
+  
+  securityContext: {}
+  
+  scrapeInterval: "15s"
+  evaluationInterval: "15s"
+  retention: "15d"
+  
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: ""
+  
+  nodeSelector: {}
+  
+  tolerations: []
+  
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 9090
+    annotations: {}
 
-image:
-  repository: docker.io/ramseytrinh338/hubble-anomaly-detector
-  pullPolicy: IfNotPresent
-  tag: "1.0.0"
+# Grafana configuration
+grafana:
+  replicaCount: 1
+  
+  image:
+    repository: grafana/grafana
+    tag: "11.0.0"
+    pullPolicy: IfNotPresent
+  
+  imagePullSecrets: []
+  
+  podAnnotations: {}
+  
+  podSecurityContext: {}
+  
+  securityContext: {}
+  
+  adminUser: "admin"
+  adminPassword: "admin"
+  rootUrl: ""
+  plugins: ""
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  persistence:
+    enabled: false
+    size: 10Gi
+    storageClass: ""
+  
+  nodeSelector: {}
+  
+  tolerations: []
+  
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 3000
+    annotations: {}
 
-imagePullSecrets: []
+# Global settings
 nameOverride: ""
 fullnameOverride: ""
-
-serviceAccount:
-  # Specifies whether a service account should be created
-  create: true
-  # Annotations to add to the service account
-  annotations: {}
-  # The name of the service account to use.
-  # If not set and create is true, a name is generated using the fullname template
-  name: ""
-
-podAnnotations: {}
-
-podSecurityContext: {}
-  # fsGroup: 2000
-
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 1000
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false  # Set to false if app needs to write logs
-  capabilities:
-    drop:
-    - ALL
-
-resources:
-  limits:
-    cpu: 1000m
-    memory: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-
-nodeSelector: {}
-
-tolerations: []
-
-affinity: {}
-
-# Service configuration
-service:
-  type: ClusterIP
-  port: 8080
-  annotations: {}
-
-# ServiceMonitor for Prometheus operator (optional)
-serviceMonitor:
-  enabled: false
-  interval: 15s
-  scrapeTimeout: 10s
-  labels: {}
-
-# Ingress configuration (optional)
-ingress:
-  enabled: false
-  className: ""
-  annotations: {}
-  hosts:
-    - host: hubble-detector.local
-      paths:
-        - path: /
-          pathType: Prefix
-  tls: []
 

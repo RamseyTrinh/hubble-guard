@@ -1,42 +1,43 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "hubble-anomaly-detector.fullname" . }}
+  name: {{ include "hubble-guard.fullname" . }}-anomaly-detector
+  namespace: hubble-guard
   labels:
-    {{- include "hubble-anomaly-detector.labels" . | nindent 4 }}
+    {{- include "hubble-guard.anomalyDetector.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.anomalyDetector.replicaCount }}
   selector:
     matchLabels:
-      {{- include "hubble-anomaly-detector.selectorLabels" . | nindent 6 }}
+      {{- include "hubble-guard.anomalyDetector.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- with .Values.anomalyDetector.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "hubble-anomaly-detector.selectorLabels" . | nindent 8 }}
+        {{- include "hubble-guard.anomalyDetector.selectorLabels" . | nindent 8 }}
     spec:
-      {{- with .Values.imagePullSecrets }}
+      {{- with .Values.anomalyDetector.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "hubble-anomaly-detector.serviceAccountName" . }}
+      serviceAccountName: {{ include "hubble-guard.serviceAccountName" . }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml .Values.anomalyDetector.podSecurityContext | nindent 8 }}
       containers:
-        - name: {{ .Chart.Name }}
+        - name: anomaly-detector
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+            {{- toYaml .Values.anomalyDetector.securityContext | nindent 12 }}
+          image: "{{ .Values.anomalyDetector.image.repository }}:{{ .Values.anomalyDetector.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.anomalyDetector.image.pullPolicy }}
           command: ["/app/hubble-anomaly-detector"]
           args:
             - "--config=/config/anomaly_detection.yaml"
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .Values.anomalyDetector.service.port }}
               protocol: TCP
           env:
             - name: NAMESPACE
@@ -60,7 +61,7 @@ spec:
             timeoutSeconds: 3
             failureThreshold: 3
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .Values.anomalyDetector.resources | nindent 12 }}
           volumeMounts:
             - name: config
               mountPath: /config
@@ -68,16 +69,16 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ include "hubble-anomaly-detector.fullname" . }}-config
-      {{- with .Values.nodeSelector }}
+            name: {{ include "hubble-guard.fullname" . }}-anomaly-detector-config
+      {{- with .Values.anomalyDetector.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- with .Values.anomalyDetector.affinity }}
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.tolerations }}
+      {{- with .Values.anomalyDetector.tolerations }}
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}

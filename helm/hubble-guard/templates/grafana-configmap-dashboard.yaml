@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hubble-guard.fullname" . }}-grafana-dashboard
+  namespace: hubble-guard
+  labels:
+    {{- include "hubble-guard.grafana.labels" . | nindent 4 }}
+data:
+  hubble-dashboard.json: |
+{{ .Files.Get "files/hubble-dashboard.json" | indent 4 }}
+

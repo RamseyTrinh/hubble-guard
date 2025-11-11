@@ -34,7 +34,7 @@ func NewPortScanRule(enabled bool, severity string, threshold float64, promClien
 		threshold:     threshold,
 		prometheusAPI: promClient,
 		logger:        logger,
-		interval:      10 * time.Second, // Check every 10 seconds
+		interval:      10 * time.Second,
 		stopChan:      make(chan struct{}),
 	}
 }
@@ -75,20 +75,15 @@ func (r *PortScanRule) Start(ctx context.Context) {
 	}
 }
 
-// Stop stops the rule
 func (r *PortScanRule) Stop() {
 	close(r.stopChan)
 }
 
-// Evaluate is called for each flow but we don't process flows directly
 func (r *PortScanRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
-	// Rules now query from Prometheus, not from individual flows
 	return nil
 }
 
-// checkFromPrometheus queries Prometheus and checks for port scanning
 func (r *PortScanRule) checkFromPrometheus(ctx context.Context) {
-	// Query for all source-dest pairs with distinct ports count
 	query := `portscan_distinct_ports_10s > 0`
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
@@ -103,12 +98,10 @@ func (r *PortScanRule) checkFromPrometheus(ctx context.Context) {
 		return
 	}
 
-	// Check each source-dest pair
 	for _, sample := range vector {
 		sourceIP := ""
 		destIP := ""
 
-		// Extract labels
 		if val, exists := sample.Metric["source_ip"]; exists {
 			sourceIP = string(val)
 		}

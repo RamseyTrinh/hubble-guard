@@ -1,6 +1,6 @@
 apiVersion: v2
-name: hubble-anomaly-detector
-description: A Helm chart for Hubble Anomaly Detector - Network flow anomaly detection using Prometheus
+name: hubble-guard
+description: A Helm chart for Hubble Guard - Anomaly Detector, Prometheus, and Grafana
 type: application
 version: 1.0.0
 appVersion: "1.0.0"
@@ -8,6 +8,7 @@ keywords:
   - hubble
   - anomaly-detection
   - prometheus
+  - grafana
   - network-security
   - monitoring
 maintainers:
