@@ -3,7 +3,7 @@
 
 # Application configuration
 application:
-  hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
+  hubble_server: "hubble-relay.kube-system.svc.cluster.local:80"
   prometheus_export_url: "8080"
   default_namespace: "default"
   auto_start: false
