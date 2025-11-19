@@ -263,26 +263,22 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 		namespace = flow.Destination.Namespace
 	}
 
-	// Record TCP resets
 	if flow.L4 != nil && flow.L4.TCP != nil && flow.L4.TCP.Flags != nil && flow.L4.TCP.Flags.RST {
 		if flow.IP != nil {
 			c.metrics.RecordTCPReset(namespace, flow.IP.Source, flow.IP.Destination)
 		}
 	}
 
-	// Record TCP drops (verdict DROPPED)
 	if flow.Verdict == model.Verdict_DROPPED {
 		if flow.IP != nil {
 			c.metrics.RecordTCPDrop(namespace, flow.IP.Source, flow.IP.Destination)
 		}
 	}
 
-	// Record new destinations
 	if flow.IP != nil {
 		c.metrics.RecordNewDestination(flow.IP.Source, flow.IP.Destination, namespace)
 	}
 
-	// Record port scan distinct ports (track destination ports per source-dest pair)
 	if flow.IP != nil && flow.L4 != nil {
 		var destPort uint16
 		if flow.L4.TCP != nil && flow.L4.TCP.DestinationPort > 0 {
@@ -302,7 +298,7 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 }
 
 func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
-	fmt.Println("🚀 Starting to stream flows from Hubble relay with metrics (no flow logs)...")
+	fmt.Println("Starting to stream flows from Hubble relay with metrics (no flow logs)...")
 
 	// Convert namespaces to slice
 	var nsList []string
@@ -310,12 +306,12 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 	case string:
 		if v != "" {
 			nsList = []string{v}
-			fmt.Printf("📋 Filtering flows for namespace: %s\n", v)
+			fmt.Printf("Filtering flows for namespace: %s\n", v)
 		}
 	case []string:
 		nsList = v
 		if len(v) > 0 {
-			fmt.Printf("📋 Filtering flows for namespaces: %s\n", strings.Join(v, ", "))
+			fmt.Printf("Filtering flows for namespaces: %s\n", strings.Join(v, ", "))
 		}
 	default:
 		// If nil or empty, don't filter
@@ -413,9 +409,9 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 
 // StreamFlowsWithMetrics streams flows from Hubble and records metrics
 func (c *HubbleGRPCClient) StreamFlowsWithMetrics(ctx context.Context, namespace string) error {
-	fmt.Println("🚀 Starting to stream flows from Hubble relay with metrics...")
+	fmt.Println("Starting to stream flows from Hubble relay with metrics...")
 	if namespace != "" {
-		fmt.Printf("📋 Filtering flows for namespace: %s\n", namespace)
+		fmt.Printf("Filtering flows for namespace: %s\n", namespace)
 	}
 	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println(strings.Repeat("=", 80))

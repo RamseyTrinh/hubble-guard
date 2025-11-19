@@ -172,7 +172,7 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 	fmt.Println("Press Ctrl+C to return to main menu")
 	fmt.Println("")
 	fmt.Println(" Flows will be collected and sent to Prometheus metrics")
-	fmt.Println("🔍 Rules will query Prometheus periodically to detect anomalies")
+	fmt.Println(" Rules will query Prometheus periodically to detect anomalies")
 	fmt.Println("")
 
 	sigChan := make(chan os.Signal, 1)
@@ -211,8 +211,8 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 		}
 	}()
 
-	fmt.Println("✅ Rules running in background, querying Prometheus...")
-	fmt.Println("✅ Flow collection started!")
+	fmt.Println(" Rules running in background, querying Prometheus...")
+	fmt.Println(" Flow collection started!")
 	fmt.Println("")
 
 	err := hubbleClient.StreamFlowsWithMetricsOnly(ctx, namespaces, func(ns string) {
