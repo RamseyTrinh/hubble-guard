@@ -287,100 +287,54 @@ docker run -it --rm hubble-anomaly-detector
 - Helm 3.0+
 - kubectl configured
 - Hubble Relay installed
-- Prometheus accessible
 
 ### Quick Start
 
-1. **Build và push Docker image:**
+**Triển khai nhanh:**
 
 ```bash
-# Build image
-make docker-build
+# 1. Tạo file cấu hình my-values.yaml (xem mẫu bên dưới)
 
-# Push to registry (set DOCKER_REGISTRY env var)
-export DOCKER_REGISTRY=your-registry.com
-make docker-push
+# 2. Triển khai với Helm
+helm install hubble-guard ./helm/hubble-guard \
+  -n hubble-guard \
+  --create-namespace \
+  -f my-values.yaml
+
+# 3. Kiểm tra deployment
+kubectl get pods -n hubble-guard
 ```
 
-2. **Update values.yaml:**
-
-Edit `helm/hubble-anomaly-detector/values.yaml`:
+**File my-values.yaml mẫu:**
 
 ```yaml
-image:
-  repository: your-registry.com/hubble-anomaly-detector
-  tag: "1.0.0"
-
-prometheus:
-  url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
-
 application:
   hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
 
-alerting:
-  telegram:
-    bot_token: "YOUR_BOT_TOKEN"
-    chat_id: "YOUR_CHAT_ID"
-    enabled: true
+anomalyDetector:
+  image:
+    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    tag: "1.0.0"
+
+grafana:
+  adminPassword: "your-secure-password"
 ```
 
-3. **Install với Helm:**
+### Tài Liệu Chi Tiết
 
-```bash
-# Install chart
-make helm-install
+📖 **Xem hướng dẫn đầy đủ**: [`HUONG_DAN_TRIEN_KHAI_K8S.md`](./HUONG_DAN_TRIEN_KHAI_K8S.md)
 
-# Or manually:
-helm install hubble-detector ./helm/hubble-anomaly-detector \
-  --namespace hubble \
-  --create-namespace \
-  -f helm/hubble-anomaly-detector/values.yaml
-```
+Hướng dẫn chi tiết bao gồm:
+- Các bước triển khai từng bước
+- Cấu hình cho các môi trường khác nhau
+- Troubleshooting các vấn đề thường gặp
+- Cấu hình bảo mật và best practices
 
-4. **Verify deployment:**
+### Tài Liệu Helm Chart
 
-```bash
-# Check pods
-kubectl get pods -n hubble -l app.kubernetes.io/name=hubble-anomaly-detector
-
-# Check logs
-kubectl logs -n hubble -l app.kubernetes.io/name=hubble-anomaly-detector -f
-
-# Check service
-kubectl get svc -n hubble -l app.kubernetes.io/name=hubble-anomaly-detector
-
-# Test metrics
-kubectl port-forward -n hubble svc/hubble-detector-hubble-anomaly-detector 8080:8080
-curl http://localhost:8080/metrics
-```
-
-### Helm Commands
-
-```bash
-# Lint chart
-make helm-lint
-
-# Package chart
-make helm-package
-
-# Install chart
-make helm-install
-
-# Upgrade chart
-make helm-upgrade
-
-# Uninstall chart
-make helm-uninstall
-
-# Dry-run (template rendering)
-make helm-template
-```
-
-### Configuration
-
-Xem `helm/hubble-anomaly-detector/values.yaml` để xem tất cả các tùy chọn cấu hình.
-
-Chi tiết hướng dẫn triển khai: xem `helm/DEPLOYMENT.md`.
+- **Helm Chart Documentation**: [`HELM_CHART_DEPLOYMENT.md`](./HELM_CHART_DEPLOYMENT.md) - Tài liệu chi tiết về cấu trúc chart
+- **Chart README**: [`helm/hubble-guard/README.md`](./helm/hubble-guard/README.md) - Tài liệu nhanh về chart
+- **Values File**: [`helm/hubble-guard/values.yaml`](./helm/hubble-guard/values.yaml) - Tất cả các tùy chọn cấu hình
 
 ## Đóng góp
 

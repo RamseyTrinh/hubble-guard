@@ -17,7 +17,7 @@ data:
       auto_start: {{ .Values.application.auto_start }}
     
     prometheus:
-      url: {{ if .Values.prometheusConfig.url }}{{ .Values.prometheusConfig.url | quote }}{{ else }}{{ printf "http://%s:%d" (include "hubble-guard.prometheus.serviceName" .) .Values.prometheus.service.port | quote }}{{ end }}
+      url: {{ if .Values.prometheusConfig.url }}{{ .Values.prometheusConfig.url | quote }}{{ else }}{{ printf "http://%s.%s.svc.cluster.local:%v" (include "hubble-guard.prometheus.serviceName" .) .Release.Namespace .Values.prometheus.service.port | quote }}{{ end }}
       timeout_seconds: {{ .Values.prometheusConfig.timeout_seconds }}
       retry_attempts: {{ .Values.prometheusConfig.retry_attempts }}
       retry_delay_seconds: {{ .Values.prometheusConfig.retry_delay_seconds }}
