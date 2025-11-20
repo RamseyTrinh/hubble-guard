@@ -317,6 +317,19 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				logger.Infof("Registered rule: %s (threshold: %.2fx)", ruleConfig.Name, threshold)
 			}
 
+		case "traffic_death":
+			if promClient != nil {
+				promRule := builtin.NewTrafficDeathRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
+				promRule.SetNamespaces(yamlConfig.Namespaces)
+				promRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(promRule)
+				ctx := context.Background()
+				go promRule.Start(ctx)
+				logger.Infof("Registered rule: %s", ruleConfig.Name)
+			}
+
 		case "new_destination":
 			// TODO: Implement Prometheus-based new destination rule
 			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)

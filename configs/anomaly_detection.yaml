@@ -75,7 +75,7 @@ rules:
     severity: "HIGH"
     description: "Phát hiện port scanning attacks"
     thresholds:
-      distinct_ports: 10
+      distinct_ports: 50
   
   - name: "namespace_access"
     enabled: true
@@ -93,6 +93,11 @@ rules:
     description: "Phát hiện các kết nối outbound đáng ngờ đến các port như Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
     thresholds:
       per_minute: 10
+  
+  - name: "traffic_death"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
 
 alerting:
   enabled: true

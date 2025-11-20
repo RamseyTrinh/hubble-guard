@@ -94,6 +94,32 @@ func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 	return fmt.Errorf("failed to send alert after %d attempts", maxRetries)
 }
 
+// escapeMarkdown escapes special Markdown characters for Telegram
+func escapeMarkdown(text string) string {
+	// Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . !
+	replacer := strings.NewReplacer(
+		"*", "\\*",
+		"_", "\\_",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"~", "\\~",
+		"`", "\\`",
+		">", "\\>",
+		"#", "\\#",
+		"+", "\\+",
+		"-", "\\-",
+		"=", "\\=",
+		"|", "\\|",
+		"{", "\\{",
+		"}", "\\}",
+		".", "\\.",
+		"!", "\\!",
+	)
+	return replacer.Replace(text)
+}
+
 func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 	if tn.messageTemplate != nil {
 		var buf bytes.Buffer
@@ -101,23 +127,49 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 		if err != nil {
 			tn.logger.Warnf("Failed to execute message template: %v, using default format", err)
 		} else {
+			// Template output should already be properly formatted
+			// Don't escape it as it may contain intentional Markdown formatting
 			return buf.String()
 		}
 	}
 
 	timestamp := alert.Timestamp.Format("2006-01-02 15:04:05")
+
+	// Escape user-provided content if using Markdown
+	severity := alert.Severity
+	typeStr := alert.Type
+	messageText := alert.Message
+
+	if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
+		severity = escapeMarkdown(severity)
+		typeStr = escapeMarkdown(typeStr)
+		messageText = escapeMarkdown(messageText)
+	}
+
 	message := fmt.Sprintf("🚨 *%s Alert*\n\n*Type:* %s\n*Time:* %s\n*Message:* %s",
-		alert.Severity,
-		alert.Type,
+		severity,
+		typeStr,
 		timestamp,
-		alert.Message)
+		messageText)
 
 	if alert.FlowData != nil {
 		if alert.FlowData.Source != nil {
-			message += fmt.Sprintf("\n*Source:* %s/%s", alert.FlowData.Source.Namespace, alert.FlowData.Source.PodName)
+			namespace := alert.FlowData.Source.Namespace
+			podName := alert.FlowData.Source.PodName
+			if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
+				namespace = escapeMarkdown(namespace)
+				podName = escapeMarkdown(podName)
+			}
+			message += fmt.Sprintf("\n*Source:* %s/%s", namespace, podName)
 		}
 		if alert.FlowData.Destination != nil {
-			message += fmt.Sprintf("\n*Destination:* %s/%s", alert.FlowData.Destination.Namespace, alert.FlowData.Destination.PodName)
+			namespace := alert.FlowData.Destination.Namespace
+			podName := alert.FlowData.Destination.PodName
+			if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
+				namespace = escapeMarkdown(namespace)
+				podName = escapeMarkdown(podName)
+			}
+			message += fmt.Sprintf("\n*Destination:* %s/%s", namespace, podName)
 		}
 	}
 

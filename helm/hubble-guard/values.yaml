@@ -108,6 +108,12 @@ rules:
     type: "prometheus"
     thresholds:
       per_minute: 10
+  
+  - name: "traffic_death"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
+    type: "prometheus"
 
 # Alerting configuration
 alerting:
