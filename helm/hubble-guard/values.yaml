@@ -127,10 +127,10 @@ alerting:
     telegram: true
   
   telegram:
-    bot_token: ""  # Set your Telegram bot token
-    chat_id: ""    # Set your Telegram chat ID
+    bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"  # Set your Telegram bot token
+    chat_id: "5037781514"    # Set your Telegram chat ID
     parse_mode: "Markdown"
-    enabled: false  # Set to true after configuring bot_token and chat_id
+    enabled: true  # Set to true after configuring bot_token and chat_id
     message_template: |
       🚨 *{{ .Severity }} Alert*
       
