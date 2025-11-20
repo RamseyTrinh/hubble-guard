@@ -26,6 +26,19 @@ spec:
       serviceAccountName: {{ include "hubble-guard.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.anomalyDetector.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-prometheus
+          image: curlimages/curl:8.4.0
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for Prometheus to be ready..."
+              until curl -f -s http://{{ include "hubble-guard.prometheus.serviceName" . }}.hubble-guard.svc.cluster.local:9090/-/ready > /dev/null 2>&1; do
+                echo "Prometheus is not ready yet. Waiting..."
+                sleep 2
+              done
+              echo "Prometheus is ready!"
       containers:
         - name: anomaly-detector
           securityContext:
