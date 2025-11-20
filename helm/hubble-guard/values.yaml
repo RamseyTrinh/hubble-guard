@@ -19,7 +19,6 @@ prometheusConfig:
 # Namespaces to monitor
 namespaces:
   - "default"
-  - "kube-system"
 
 # Detection configuration
 detection:
