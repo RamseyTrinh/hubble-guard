@@ -95,27 +95,40 @@ func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 }
 
 // escapeMarkdown escapes special Markdown characters for Telegram
-func escapeMarkdown(text string) string {
-	// Escape special Markdown characters: * _ [ ] ( ) ~ ` > # + - = | { } . !
+// For Markdown mode, only need to escape: * _ ` [
+// For MarkdownV2, need to escape more characters
+func escapeMarkdown(text string, parseMode string) string {
+	if parseMode == "MarkdownV2" {
+		// MarkdownV2 requires escaping more characters
+		replacer := strings.NewReplacer(
+			"*", "\\*",
+			"_", "\\_",
+			"[", "\\[",
+			"]", "\\]",
+			"(", "\\(",
+			")", "\\)",
+			"~", "\\~",
+			"`", "\\`",
+			">", "\\>",
+			"#", "\\#",
+			"+", "\\+",
+			"-", "\\-",
+			"=", "\\=",
+			"|", "\\|",
+			"{", "\\{",
+			"}", "\\}",
+			".", "\\.",
+			"!", "\\!",
+		)
+		return replacer.Replace(text)
+	}
+
+	// For Markdown mode, only escape: * _ ` [
 	replacer := strings.NewReplacer(
 		"*", "\\*",
 		"_", "\\_",
-		"[", "\\[",
-		"]", "\\]",
-		"(", "\\(",
-		")", "\\)",
-		"~", "\\~",
 		"`", "\\`",
-		">", "\\>",
-		"#", "\\#",
-		"+", "\\+",
-		"-", "\\-",
-		"=", "\\=",
-		"|", "\\|",
-		"{", "\\{",
-		"}", "\\}",
-		".", "\\.",
-		"!", "\\!",
+		"[", "\\[",
 	)
 	return replacer.Replace(text)
 }
@@ -141,9 +154,9 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 	messageText := alert.Message
 
 	if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
-		severity = escapeMarkdown(severity)
-		typeStr = escapeMarkdown(typeStr)
-		messageText = escapeMarkdown(messageText)
+		severity = escapeMarkdown(severity, tn.parseMode)
+		typeStr = escapeMarkdown(typeStr, tn.parseMode)
+		messageText = escapeMarkdown(messageText, tn.parseMode)
 	}
 
 	message := fmt.Sprintf("🚨 *%s Alert*\n\n*Type:* %s\n*Time:* %s\n*Message:* %s",
@@ -157,8 +170,8 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 			namespace := alert.FlowData.Source.Namespace
 			podName := alert.FlowData.Source.PodName
 			if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
-				namespace = escapeMarkdown(namespace)
-				podName = escapeMarkdown(podName)
+				namespace = escapeMarkdown(namespace, tn.parseMode)
+				podName = escapeMarkdown(podName, tn.parseMode)
 			}
 			message += fmt.Sprintf("\n*Source:* %s/%s", namespace, podName)
 		}
@@ -166,8 +179,8 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 			namespace := alert.FlowData.Destination.Namespace
 			podName := alert.FlowData.Destination.PodName
 			if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
-				namespace = escapeMarkdown(namespace)
-				podName = escapeMarkdown(podName)
+				namespace = escapeMarkdown(namespace, tn.parseMode)
+				podName = escapeMarkdown(podName, tn.parseMode)
 			}
 			message += fmt.Sprintf("\n*Destination:* %s/%s", namespace, podName)
 		}
