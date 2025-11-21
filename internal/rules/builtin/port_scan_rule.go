@@ -21,6 +21,7 @@ type PortScanRule struct {
 	interval      time.Duration
 	stopChan      chan struct{}
 	alertEmitter  func(*model.Alert)
+	namespaces    []string
 }
 
 func NewPortScanRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *PortScanRule {
@@ -36,11 +37,20 @@ func NewPortScanRule(enabled bool, severity string, threshold float64, promClien
 		logger:        logger,
 		interval:      10 * time.Second,
 		stopChan:      make(chan struct{}),
+		namespaces:    []string{"default"},
 	}
 }
 
 func (r *PortScanRule) SetAlertEmitter(emitter func(*model.Alert)) {
 	r.alertEmitter = emitter
+}
+
+func (r *PortScanRule) SetNamespaces(namespaces []string) {
+	if len(namespaces) == 0 {
+		r.namespaces = []string{"default"}
+	} else {
+		r.namespaces = namespaces
+	}
 }
 
 func (r *PortScanRule) Name() string {
@@ -84,17 +94,23 @@ func (r *PortScanRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Al
 }
 
 func (r *PortScanRule) checkFromPrometheus(ctx context.Context) {
-	query := `portscan_distinct_ports_10s > 0`
+	for _, namespace := range r.namespaces {
+		r.checkNamespace(ctx, namespace)
+	}
+}
+
+func (r *PortScanRule) checkNamespace(ctx context.Context, namespace string) {
+	query := fmt.Sprintf(`portscan_distinct_ports_10s{namespace="%s"} > 0`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
 	if err != nil {
-		r.logger.Errorf("[Port Scan] Failed to query Prometheus: %v", err)
+		r.logger.Errorf("[Port Scan] Failed to query Prometheus for namespace %s: %v", namespace, err)
 		return
 	}
 
 	vector, ok := result.(prommodel.Vector)
 	if !ok {
-		r.logger.Debugf("[Port Scan] No data from Prometheus")
+		r.logger.Debugf("[Port Scan] No data from Prometheus for namespace %s", namespace)
 		return
 	}
 
@@ -111,14 +127,15 @@ func (r *PortScanRule) checkFromPrometheus(ctx context.Context) {
 
 		distinctPorts := float64(sample.Value)
 
-		r.logger.Debugf("[Port Scan] source_ip: %s, dest_ip: %s, distinct_ports: %.0f (threshold: %.0f)",
-			sourceIP, destIP, distinctPorts, r.threshold)
+		r.logger.Debugf("[Port Scan] Namespace: %s | source_ip: %s, dest_ip: %s, distinct_ports: %.0f (threshold: %.0f)",
+			namespace, sourceIP, destIP, distinctPorts, r.threshold)
 
 		if distinctPorts > r.threshold {
 			alert := &model.Alert{
 				Type:      r.name,
 				Severity:  r.severity,
-				Message:   fmt.Sprintf("Port scanning detected: %.0f distinct ports in 10 seconds from %s to %s (threshold: %.0f)", distinctPorts, sourceIP, destIP, r.threshold),
+				Namespace: namespace,
+				Message:   fmt.Sprintf("Port scanning detected in namespace %s: %.0f distinct ports in 10 seconds from %s to %s (threshold: %.0f)", namespace, distinctPorts, sourceIP, destIP, r.threshold),
 				Timestamp: time.Now(),
 			}
 			r.logger.Warnf("Port Scan Rule Alert: %s", alert.Message)

@@ -38,44 +38,25 @@ func main() {
 	}
 
 	// Load configuration from YAML file
-	var yamlConfig *utils.AnomalyDetectionConfig
-	var config *utils.DefaultConfig
-
-	yamlConfig, err := utils.LoadAnomalyDetectionConfig(*configFile)
+	config, err := utils.LoadAnomalyDetectionConfig(*configFile)
 	if err != nil {
 		fmt.Printf("Failed to load YAML config %s: %v\n", *configFile, err)
 		fmt.Println("Using default configuration...")
-		config = utils.GetDefaultConfig()
+		config = utils.GetDefaultAnomalyDetectionConfig()
 	} else {
-		config = yamlConfig.ToDefaultConfig()
 		fmt.Printf("✅ Loaded configuration from %s\n", *configFile)
 	}
 
-	var hubbleServer, prometheusPort, namespace string
-	if yamlConfig != nil {
-		hubbleServer = yamlConfig.Application.HubbleServer
-		prometheusPort = yamlConfig.Application.PrometheusExportURL
-		if strings.Contains(prometheusPort, ":") {
-			parts := strings.Split(prometheusPort, ":")
-			if len(parts) > 0 {
-				prometheusPort = parts[len(parts)-1]
-			}
-		}
-		namespace = yamlConfig.Application.DefaultNamespace
-	} else {
-		hubbleServer = config.Application.HubbleServer
-		prometheusPort = config.Application.PrometheusPort
-		namespace = config.Application.DefaultNamespace
-	}
+	hubbleServer := config.Application.HubbleServer
+	prometheusPort := config.GetPrometheusPort()
+	namespace := config.Application.DefaultNamespace
 
 	fmt.Println("Hubble Anomaly Detector")
 	fmt.Printf("Connecting to Hubble relay at: %s\n", hubbleServer)
 	fmt.Printf("Prometheus export URL: %s\n", prometheusPort)
 	fmt.Printf("Prometheus query URL: %s\n", config.Prometheus.URL)
-	if yamlConfig != nil && len(yamlConfig.Namespaces) > 0 {
-		fmt.Printf("Monitoring namespaces: %s\n", strings.Join(yamlConfig.Namespaces, ", "))
-	} else if len(config.Detection.Namespaces) > 0 {
-		fmt.Printf("Monitoring namespaces: %s\n", strings.Join(config.Detection.Namespaces, ", "))
+	if len(config.Namespaces) > 0 {
+		fmt.Printf("Monitoring namespaces: %s\n", strings.Join(config.Namespaces, ", "))
 	} else {
 		fmt.Printf("Using namespace: %s\n", namespace)
 	}
@@ -115,13 +96,9 @@ func main() {
 
 	engine := rules.NewEngine(logger)
 
-	if yamlConfig != nil {
-		utils.RegisterBuiltinRulesFromYAML(engine, yamlConfig, logger, promClient)
-	} else {
-		utils.RegisterBuiltinRules(engine, config, logger, promClient)
-	}
+	utils.RegisterBuiltinRulesFromYAML(engine, config, logger, promClient)
 
-	registerAlertNotifiers(engine, config, yamlConfig, logger)
+	registerAlertNotifiers(engine, config, logger)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := hubbleClient.TestConnection(ctx); err != nil {
@@ -131,10 +108,8 @@ func main() {
 	cancel()
 
 	var namespaces []string
-	if yamlConfig != nil && len(yamlConfig.Namespaces) > 0 {
-		namespaces = yamlConfig.Namespaces
-	} else if len(config.Detection.Namespaces) > 0 {
-		namespaces = config.Detection.Namespaces
+	if len(config.Namespaces) > 0 {
+		namespaces = config.Namespaces
 	} else {
 		namespaces = []string{namespace}
 	}
@@ -143,17 +118,14 @@ func main() {
 
 }
 
-func registerAlertNotifiers(engine *rules.Engine, config *utils.DefaultConfig, yamlConfig *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
+func registerAlertNotifiers(engine *rules.Engine, config *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
 	if config.Alerting.Channels.Log {
 		logNotifier := alert.NewLogAlertNotifier(logger)
 		engine.RegisterNotifier(logNotifier)
 	}
 
 	if config.Alerting.Channels.Telegram && config.Alerting.Telegram.Enabled {
-		messageTemplate := ""
-		if yamlConfig != nil && yamlConfig.Alerting.Telegram.MessageTemplate != "" {
-			messageTemplate = yamlConfig.Alerting.Telegram.MessageTemplate
-		}
+		messageTemplate := config.Alerting.Telegram.MessageTemplate
 
 		telegramNotifier := alert.NewTelegramNotifierWithTemplate(
 			config.Alerting.Telegram.BotToken,
@@ -167,7 +139,7 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.DefaultConfig, y
 	}
 }
 
-func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.DefaultConfig) {
+func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.AnomalyDetectionConfig) {
 	fmt.Println("\nANOMALY DETECTION MODE (Prometheus-based)")
 	fmt.Println("Press Ctrl+C to return to main menu")
 	fmt.Println("")
@@ -227,15 +199,11 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 }
 
 func testTelegramNotification(configFile string) {
-	var config *utils.DefaultConfig
-
-	yamlConfig, err := utils.LoadAnomalyDetectionConfig(configFile)
+	config, err := utils.LoadAnomalyDetectionConfig(configFile)
 	if err != nil {
 		fmt.Printf("Failed to load config file %s: %v\n", configFile, err)
 		fmt.Println("Using default configuration...")
-		config = utils.GetDefaultConfig()
-	} else {
-		config = yamlConfig.ToDefaultConfig()
+		config = utils.GetDefaultAnomalyDetectionConfig()
 	}
 
 	logger := utils.NewLogger(config.Logging.Level)

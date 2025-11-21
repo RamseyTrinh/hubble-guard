@@ -1,5 +1,3 @@
-# Anomaly Detection Configuration
-# Main configuration file for Hubble Anomaly Detector
 
 application:
   hubble_server: "localhost:4245"
@@ -23,10 +21,17 @@ detection:
   check_interval_seconds: 10
 
 rules:
+  - name: "ddos"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện DDoS attack real-time"
+    thresholds:
+      multiplier: 3.0
+  
   - name: "traffic_spike"
     enabled: true
     severity: "CRITICAL"
-    description: "Phát hiện traffic spike có thể là DDoS"
+    description: "Phát hiện traffic spike có thể là DDoS (từ Prometheus)"
     thresholds:
       multiplier: 3.0
   

@@ -15,7 +15,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AnomalyDetectionConfig represents the complete configuration structure
 type AnomalyDetectionConfig struct {
 	Application ApplicationYAMLConfig `yaml:"application"`
 	Prometheus  PrometheusYAMLConfig  `yaml:"prometheus"`
@@ -26,15 +25,13 @@ type AnomalyDetectionConfig struct {
 	Logging     LoggingYAMLConfig     `yaml:"logging"`
 }
 
-// ApplicationYAMLConfig cấu hình ứng dụng từ YAML
 type ApplicationYAMLConfig struct {
 	HubbleServer        string `yaml:"hubble_server"`
-	PrometheusExportURL string `yaml:"prometheus_export_url"` // Port để expose metrics
+	PrometheusExportURL string `yaml:"prometheus_export_url"`
 	DefaultNamespace    string `yaml:"default_namespace"`
 	AutoStart           bool   `yaml:"auto_start"`
 }
 
-// PrometheusYAMLConfig cấu hình Prometheus từ YAML
 type PrometheusYAMLConfig struct {
 	URL               string `yaml:"url"`
 	TimeoutSeconds    int    `yaml:"timeout_seconds"`
@@ -42,14 +39,12 @@ type PrometheusYAMLConfig struct {
 	RetryDelaySeconds int    `yaml:"retry_delay_seconds"`
 }
 
-// DetectionYAMLConfig cấu hình detection từ YAML
 type DetectionYAMLConfig struct {
 	BaselineMultiplier    float64 `yaml:"baseline_multiplier"`
 	BaselineWindowMinutes int     `yaml:"baseline_window_minutes"`
 	CheckIntervalSeconds  int     `yaml:"check_interval_seconds"`
 }
 
-// AlertingYAMLConfig cấu hình alerting từ YAML
 type AlertingYAMLConfig struct {
 	Enabled              bool                   `yaml:"enabled"`
 	MaxAlertsPerMinute   int                    `yaml:"max_alerts_per_minute"`
@@ -59,7 +54,6 @@ type AlertingYAMLConfig struct {
 	Alertmanager         AlertmanagerYAMLConfig `yaml:"alertmanager,omitempty"`
 }
 
-// AlertmanagerYAMLConfig cấu hình Alertmanager từ YAML
 type AlertmanagerYAMLConfig struct {
 	Enabled        bool                    `yaml:"enabled"`
 	URL            string                  `yaml:"url"`
@@ -68,7 +62,6 @@ type AlertmanagerYAMLConfig struct {
 	TelegramConfig TelegramYAMLConfig      `yaml:"telegram_config"`
 }
 
-// AlertmanagerRouteConfig cấu hình route của Alertmanager
 type AlertmanagerRouteConfig struct {
 	Receiver       string   `yaml:"receiver"`
 	GroupBy        []string `yaml:"group_by"`
@@ -77,7 +70,6 @@ type AlertmanagerRouteConfig struct {
 	GroupInterval  string   `yaml:"group_interval"`
 }
 
-// AlertChannelsYAML cấu hình channels từ YAML
 type AlertChannelsYAML struct {
 	Log      bool `yaml:"log"`
 	Webhook  bool `yaml:"webhook"`
@@ -85,7 +77,6 @@ type AlertChannelsYAML struct {
 	Telegram bool `yaml:"telegram"`
 }
 
-// TelegramYAMLConfig cấu hình Telegram từ YAML
 type TelegramYAMLConfig struct {
 	BotToken        string `yaml:"bot_token"`
 	ChatID          string `yaml:"chat_id"`
@@ -94,16 +85,13 @@ type TelegramYAMLConfig struct {
 	MessageTemplate string `yaml:"message_template,omitempty"`
 }
 
-// LoggingYAMLConfig cấu hình logging từ YAML
 type LoggingYAMLConfig struct {
 	Level    string `yaml:"level"`
 	Format   string `yaml:"format"`
 	FilePath string `yaml:"file_path"`
 }
 
-// LoadAnomalyDetectionConfig loads configuration from YAML file
 func LoadAnomalyDetectionConfig(filename string) (*AnomalyDetectionConfig, error) {
-	// Default to anomaly_detection.yaml if filename is empty
 	if filename == "" {
 		filename = "configs/anomaly_detection.yaml"
 	}
@@ -118,7 +106,6 @@ func LoadAnomalyDetectionConfig(filename string) (*AnomalyDetectionConfig, error
 		return nil, fmt.Errorf("failed to parse YAML config file %s: %v", filename, err)
 	}
 
-	// Validate and set defaults
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %v", err)
 	}
@@ -126,21 +113,17 @@ func LoadAnomalyDetectionConfig(filename string) (*AnomalyDetectionConfig, error
 	return &config, nil
 }
 
-// Validate validates the configuration
 func (c *AnomalyDetectionConfig) Validate() error {
-	// Application defaults
 	if c.Application.HubbleServer == "" {
 		c.Application.HubbleServer = "localhost:4245"
 	}
 	if c.Application.PrometheusExportURL == "" {
-		// Extract port from URL, default to 8080
 		c.Application.PrometheusExportURL = "8080"
 	}
 	if c.Application.DefaultNamespace == "" {
 		c.Application.DefaultNamespace = "default"
 	}
 
-	// Prometheus defaults
 	if c.Prometheus.URL == "" {
 		return fmt.Errorf("prometheus URL cannot be empty")
 	}
@@ -154,12 +137,10 @@ func (c *AnomalyDetectionConfig) Validate() error {
 		c.Prometheus.RetryDelaySeconds = 5
 	}
 
-	// Namespaces defaults
 	if len(c.Namespaces) == 0 {
 		c.Namespaces = []string{"default"}
 	}
 
-	// Detection defaults
 	if c.Detection.BaselineMultiplier <= 0 {
 		c.Detection.BaselineMultiplier = 3.0
 	}
@@ -170,7 +151,6 @@ func (c *AnomalyDetectionConfig) Validate() error {
 		c.Detection.CheckIntervalSeconds = 10
 	}
 
-	// Alerting defaults
 	if c.Alerting.MaxAlertsPerMinute <= 0 {
 		c.Alerting.MaxAlertsPerMinute = 10
 	}
@@ -178,7 +158,6 @@ func (c *AnomalyDetectionConfig) Validate() error {
 		c.Alerting.AlertCooldownSeconds = 60
 	}
 
-	// Logging defaults
 	if c.Logging.Level == "" {
 		c.Logging.Level = "INFO"
 	}
@@ -189,32 +168,8 @@ func (c *AnomalyDetectionConfig) Validate() error {
 	return nil
 }
 
-// ToDefaultConfig converts YAML config to DefaultConfig format
-// for backward compatibility
-func (c *AnomalyDetectionConfig) ToDefaultConfig() *DefaultConfig {
-	// Convert rules to map format
-	rulesMap := make(map[string]AnomalyRuleConfig)
-	for _, rule := range c.Rules {
-		ruleConfig := AnomalyRuleConfig{
-			Enabled:     rule.Enabled,
-			Severity:    rule.Severity,
-			Description: rule.Description,
-		}
-
-		// Extract thresholds
-		if thresholds, ok := rule.Thresholds["multiplier"].(float64); ok {
-			multiplier := thresholds
-			ruleConfig.ThresholdMultiplier = &multiplier
-		}
-		if thresholds, ok := rule.Thresholds["per_minute"].(int); ok {
-			perMinute := thresholds
-			ruleConfig.ThresholdPerMinute = &perMinute
-		}
-
-		rulesMap[rule.Name] = ruleConfig
-	}
-
-	// Extract port from PrometheusExportURL
+// GetPrometheusPort extracts port from PrometheusExportURL
+func (c *AnomalyDetectionConfig) GetPrometheusPort() string {
 	exportPort := c.Application.PrometheusExportURL
 	if strings.Contains(exportPort, ":") {
 		parts := strings.Split(exportPort, ":")
@@ -222,57 +177,9 @@ func (c *AnomalyDetectionConfig) ToDefaultConfig() *DefaultConfig {
 			exportPort = parts[len(parts)-1]
 		}
 	}
-
-	return &DefaultConfig{
-		Application: ApplicationConfig{
-			HubbleServer:     c.Application.HubbleServer,
-			PrometheusPort:   exportPort,
-			DefaultNamespace: c.Application.DefaultNamespace,
-		},
-		Prometheus: PrometheusConfig{
-			URL:               c.Prometheus.URL,
-			TimeoutSeconds:    c.Prometheus.TimeoutSeconds,
-			RetryAttempts:     c.Prometheus.RetryAttempts,
-			RetryDelaySeconds: c.Prometheus.RetryDelaySeconds,
-		},
-		Detection: DetectionConfig{
-			BaselineMultiplier:    c.Detection.BaselineMultiplier,
-			BaselineWindowMinutes: c.Detection.BaselineWindowMinutes,
-			CheckIntervalSeconds:  c.Detection.CheckIntervalSeconds,
-			Namespaces:            c.Namespaces,
-		},
-		Rules: rulesMap,
-		Alerting: AlertingConfig{
-			Enabled:              c.Alerting.Enabled,
-			MaxAlertsPerMinute:   c.Alerting.MaxAlertsPerMinute,
-			AlertCooldownSeconds: c.Alerting.AlertCooldownSeconds,
-			Channels: struct {
-				Log      bool `json:"log"`
-				Webhook  bool `json:"webhook"`
-				Email    bool `json:"email"`
-				Telegram bool `json:"telegram"`
-			}{
-				Log:      c.Alerting.Channels.Log,
-				Webhook:  c.Alerting.Channels.Webhook,
-				Email:    c.Alerting.Channels.Email,
-				Telegram: c.Alerting.Channels.Telegram,
-			},
-			Telegram: TelegramConfig{
-				BotToken:  c.Alerting.Telegram.BotToken,
-				ChatID:    c.Alerting.Telegram.ChatID,
-				ParseMode: c.Alerting.Telegram.ParseMode,
-				Enabled:   c.Alerting.Telegram.Enabled,
-			},
-		},
-		Logging: LoggingConfig{
-			Level:    c.Logging.Level,
-			Format:   c.Logging.Format,
-			FilePath: c.Logging.FilePath,
-		},
-	}
+	return exportPort
 }
 
-// GetRuleConfigByName gets rule config by name
 func (c *AnomalyDetectionConfig) GetRuleConfigByName(name string) (*model.Rule, bool) {
 	for i := range c.Rules {
 		if c.Rules[i].Name == name {
@@ -282,21 +189,80 @@ func (c *AnomalyDetectionConfig) GetRuleConfigByName(name string) (*model.Rule, 
 	return nil, false
 }
 
-// IsRuleEnabled checks if a rule is enabled
 func (c *AnomalyDetectionConfig) IsRuleEnabled(name string) bool {
 	rule, exists := c.GetRuleConfigByName(name)
 	return exists && rule.Enabled
 }
 
-// RegisterBuiltinRulesFromYAML registers rules from YAML config
+// GetDefaultAnomalyDetectionConfig returns a default AnomalyDetectionConfig
+func GetDefaultAnomalyDetectionConfig() *AnomalyDetectionConfig {
+	return &AnomalyDetectionConfig{
+		Application: ApplicationYAMLConfig{
+			HubbleServer:        "localhost:4245",
+			PrometheusExportURL: "8080",
+			DefaultNamespace:    "default",
+			AutoStart:           false,
+		},
+		Prometheus: PrometheusYAMLConfig{
+			URL:               "http://localhost:9090",
+			TimeoutSeconds:    10,
+			RetryAttempts:     3,
+			RetryDelaySeconds: 5,
+		},
+		Namespaces: []string{"default"},
+		Detection: DetectionYAMLConfig{
+			BaselineMultiplier:    3.0,
+			BaselineWindowMinutes: 1,
+			CheckIntervalSeconds:  30,
+		},
+		Rules: []model.Rule{},
+		Alerting: AlertingYAMLConfig{
+			Enabled:              true,
+			MaxAlertsPerMinute:   10,
+			AlertCooldownSeconds: 60,
+			Channels: AlertChannelsYAML{
+				Log:      true,
+				Webhook:  false,
+				Email:    false,
+				Telegram: true,
+			},
+			Telegram: TelegramYAMLConfig{
+				BotToken:  "",
+				ChatID:    "",
+				ParseMode: "Markdown",
+				Enabled:   false,
+			},
+		},
+		Logging: LoggingYAMLConfig{
+			Level:    "INFO",
+			Format:   "json",
+			FilePath: "/var/log/anomaly-detector.log",
+		},
+	}
+}
+
 func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetectionConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
 	for _, ruleConfig := range yamlConfig.Rules {
 		if !ruleConfig.Enabled {
 			continue
 		}
 
-		// Handle different rule types
 		switch ruleConfig.Name {
+		case "ddos":
+			threshold := 3.0
+			if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
+				threshold = thresholds
+			} else if thresholds, ok := ruleConfig.Thresholds["multiplier"].(int); ok {
+				threshold = float64(thresholds)
+			}
+
+			ddosRule := builtin.NewDDoSRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, logger)
+			ddosRule.SetAlertEmitter(func(alert *model.Alert) {
+				engine.EmitAlert(*alert)
+			})
+			engine.RegisterRule(ddosRule)
+			logger.Infof("Registered rule: %s (threshold: %.2fx, real-time monitoring)", ruleConfig.Name, threshold)
+
 		case "traffic_spike":
 			if promClient != nil {
 				threshold := 3.0
@@ -306,7 +272,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 					threshold = float64(thresholds)
 				}
 
-				promRule := builtin.NewDDoSRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				promRule := builtin.NewTrafficSpikeRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
 				promRule.SetNamespaces(yamlConfig.Namespaces)
 				promRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
@@ -319,7 +285,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 
 		case "traffic_death":
 			if promClient != nil {
-				promRule := builtin.NewTrafficDeathRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
+				promRule := builtin.NewTrafficDeathRule(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
 				promRule.SetNamespaces(yamlConfig.Namespaces)
 				promRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
@@ -329,26 +295,6 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				go promRule.Start(ctx)
 				logger.Infof("Registered rule: %s", ruleConfig.Name)
 			}
-
-		case "new_destination":
-			// TODO: Implement Prometheus-based new destination rule
-			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
-
-		case "tcp_reset_surge":
-			// TODO: Implement Prometheus-based TCP reset rule
-			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
-
-		case "tcp_drop_surge":
-			// TODO: Implement Prometheus-based TCP drop rule
-			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
-
-		case "high_bandwidth":
-			// TODO: Implement Prometheus-based bandwidth rule
-			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
-
-		case "unusual_port_scan":
-			// TODO: Implement Prometheus-based port scan rule
-			logger.Debugf("Rule %s is configured but not yet implemented with Prometheus", ruleConfig.Name)
 
 		case "block_connection":
 			if promClient != nil {
@@ -388,6 +334,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				}
 
 				portScanRule := builtin.NewPortScanRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				portScanRule.SetNamespaces(yamlConfig.Namespaces)
 				portScanRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
 				})
@@ -397,7 +344,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				logger.Infof("Registered rule: %s (threshold: %.0f distinct ports in 10s)", ruleConfig.Name, threshold)
 			}
 
-		case "suspicious_outbound", "outbound":
+		case "suspicious_outbound":
 			if promClient != nil {
 				threshold := 10.0
 				if thresholds, ok := ruleConfig.Thresholds["per_minute"].(float64); ok {
@@ -421,7 +368,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				logger.Infof("Registered rule: %s (threshold: %.0f connections per minute)", ruleConfig.Name, threshold)
 			}
 
-		case "namespace_access", "unauthorized_namespace_access":
+		case "namespace_access":
 			if promClient != nil {
 				var forbiddenNS []string
 				if thresholds, ok := ruleConfig.Thresholds["forbidden_namespaces"].([]interface{}); ok {
@@ -471,24 +418,4 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 			logger.Warnf("Unknown rule type: %s", ruleConfig.Name)
 		}
 	}
-}
-
-func RegisterBuiltinRules(engine *rules.Engine, config *DefaultConfig, logger *logrus.Logger, promClient *client.PrometheusClient) {
-	if ruleConfig, exists := config.GetRuleConfig("traffic_spike"); exists && promClient != nil {
-		threshold := 3.0
-		if ruleConfig.ThresholdMultiplier != nil {
-			threshold = *ruleConfig.ThresholdMultiplier
-		}
-		promRule := builtin.NewDDoSRulePrometheus(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
-		promRule.SetNamespaces(config.Detection.Namespaces)
-		promRule.SetAlertEmitter(func(alert *model.Alert) {
-			engine.EmitAlert(*alert)
-		})
-		if promRule.IsEnabled() {
-			engine.RegisterRule(promRule)
-			ctx := context.Background()
-			go promRule.Start(ctx)
-		}
-	}
-
 }

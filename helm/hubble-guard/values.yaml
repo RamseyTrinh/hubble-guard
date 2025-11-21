@@ -28,10 +28,18 @@ detection:
 
 # Rules configuration
 rules:
+  - name: "ddos"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện DDoS attack real-time (theo dõi trực tiếp từ flows)"
+    type: "realtime"
+    thresholds:
+      multiplier: 3.0
+  
   - name: "traffic_spike"
     enabled: true
     severity: "CRITICAL"
-    description: "Phát hiện traffic spike có thể là DDoS"
+    description: "Phát hiện traffic spike: lưu lượng tăng nhanh trong thời gian ngắn"
     type: "prometheus"
     thresholds:
       multiplier: 3.0

@@ -10,13 +10,11 @@ import (
 	prommodel "github.com/prometheus/common/model"
 )
 
-// PrometheusClient wraps Prometheus API client
 type PrometheusClient struct {
 	client v1.API
 	url    string
 }
 
-// NewPrometheusClient creates a new Prometheus client
 func NewPrometheusClient(url string) (*PrometheusClient, error) {
 	promClient, err := api.NewClient(api.Config{
 		Address: url,
@@ -32,7 +30,6 @@ func NewPrometheusClient(url string) (*PrometheusClient, error) {
 	}, nil
 }
 
-// Query executes a Prometheus query
 func (p *PrometheusClient) Query(ctx context.Context, query string, timeout time.Duration) (prommodel.Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -41,7 +38,6 @@ func (p *PrometheusClient) Query(ctx context.Context, query string, timeout time
 	return result, err
 }
 
-// QueryRange executes a Prometheus range query
 func (p *PrometheusClient) QueryRange(ctx context.Context, query string, r v1.Range, timeout time.Duration) (prommodel.Value, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -50,7 +46,6 @@ func (p *PrometheusClient) QueryRange(ctx context.Context, query string, r v1.Ra
 	return result, err
 }
 
-// GetClient returns the underlying Prometheus API client
 func (p *PrometheusClient) GetClient() v1.API {
 	return p.client
 }

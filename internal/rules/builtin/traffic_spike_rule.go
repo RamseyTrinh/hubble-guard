@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type DDoSRulePrometheus struct {
+type TrafficSpikeRule struct {
 	name           string
 	enabled        bool
 	severity       string
@@ -34,12 +34,12 @@ type PrometheusQueryClient interface {
 	Query(ctx context.Context, query string, timeout time.Duration) (prommodel.Value, error)
 }
 
-func NewDDoSRulePrometheus(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *DDoSRulePrometheus {
+func NewTrafficSpikeRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *TrafficSpikeRule {
 	if threshold <= 0 {
 		threshold = 3.0
 	}
-	return &DDoSRulePrometheus{
-		name:           "ddos_traffic_spike",
+	return &TrafficSpikeRule{
+		name:           "traffic_spike",
 		enabled:        enabled,
 		severity:       severity,
 		threshold:      threshold,
@@ -49,29 +49,33 @@ func NewDDoSRulePrometheus(enabled bool, severity string, threshold float64, pro
 		baselineStart:  make(map[string]time.Time),
 		baselineRates:  make(map[string][]float64),
 		logger:         logger,
-		interval:       10 * time.Second, // Check every 10 seconds
+		interval:       10 * time.Second,
 		stopChan:       make(chan struct{}),
-		namespaces:     []string{"default", "kube-system"},
+		namespaces:     []string{"default"},
 	}
 }
 
-func (r *DDoSRulePrometheus) SetAlertEmitter(emitter func(*model.Alert)) {
+func (r *TrafficSpikeRule) SetAlertEmitter(emitter func(*model.Alert)) {
 	r.alertEmitter = emitter
 }
 
-func (r *DDoSRulePrometheus) SetNamespaces(namespaces []string) {
-	r.namespaces = namespaces
+func (r *TrafficSpikeRule) SetNamespaces(namespaces []string) {
+	if len(namespaces) == 0 {
+		r.namespaces = []string{"default"}
+	} else {
+		r.namespaces = namespaces
+	}
 }
 
-func (r *DDoSRulePrometheus) Name() string {
+func (r *TrafficSpikeRule) Name() string {
 	return r.name
 }
 
-func (r *DDoSRulePrometheus) IsEnabled() bool {
+func (r *TrafficSpikeRule) IsEnabled() bool {
 	return r.enabled
 }
 
-func (r *DDoSRulePrometheus) Start(ctx context.Context) {
+func (r *TrafficSpikeRule) Start(ctx context.Context) {
 	if !r.enabled {
 		return
 	}
@@ -95,26 +99,21 @@ func (r *DDoSRulePrometheus) Start(ctx context.Context) {
 	}
 }
 
-func (r *DDoSRulePrometheus) Stop() {
+func (r *TrafficSpikeRule) Stop() {
 	close(r.stopChan)
 }
 
-func (r *DDoSRulePrometheus) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
+func (r *TrafficSpikeRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
 	return nil
 }
 
-func (r *DDoSRulePrometheus) checkFromPrometheus(ctx context.Context) {
-	namespaces := r.namespaces
-	if len(namespaces) == 0 {
-		namespaces = r.getNamespacesFromConfig()
-	}
-
-	for _, namespace := range namespaces {
+func (r *TrafficSpikeRule) checkFromPrometheus(ctx context.Context) {
+	for _, namespace := range r.namespaces {
 		r.checkNamespace(ctx, namespace)
 	}
 }
 
-func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace string) {
+func (r *TrafficSpikeRule) checkNamespace(ctx context.Context, namespace string) {
 	query := fmt.Sprintf(`rate(hubble_flows_total{namespace="%s"}[1m])`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
@@ -184,20 +183,13 @@ func (r *DDoSRulePrometheus) checkNamespace(ctx context.Context, namespace strin
 		alert := &model.Alert{
 			Type:      r.name,
 			Severity:  r.severity,
+			Namespace: namespace,
 			Message:   fmt.Sprintf("Traffic spike detected in namespace %s: %.2fx baseline (%.2f flows/sec vs %.2f baseline)", namespace, multiplier, currentRate, baseline),
 			Timestamp: time.Now(),
 		}
-		r.logger.Warnf("DDoS Rule Alert: %s", alert.Message)
-		// Emit alert through emitter function
+		r.logger.Warnf("Traffic Spike Rule Alert: %s", alert.Message)
 		if r.alertEmitter != nil {
 			r.alertEmitter(alert)
 		}
 	}
-}
-
-func (r *DDoSRulePrometheus) getNamespacesFromConfig() []string {
-	if len(r.namespaces) > 0 {
-		return r.namespaces
-	}
-	return []string{"default", "kube-system"}
 }

@@ -40,35 +40,34 @@ func NewBlockConnectionRule(enabled bool, severity string, threshold float64, pr
 		threshold:     threshold,
 		prometheusAPI: promClient,
 		logger:        logger,
-		interval:      10 * time.Second, // Check every 10 seconds
+		interval:      10 * time.Second,
 		stopChan:      make(chan struct{}),
-		namespaces:    []string{"default", "kube-system"},
+		namespaces:    []string{"default"},
 	}
 }
 
-// SetAlertEmitter sets the function to emit alerts
 func (r *BlockConnectionRule) SetAlertEmitter(emitter func(*model.Alert)) {
 	r.alertEmitter = emitter
 }
 
-// SetNamespaces sets namespaces to check
 func (r *BlockConnectionRule) SetNamespaces(namespaces []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.namespaces = namespaces
+	if len(namespaces) == 0 {
+		r.namespaces = []string{"default"}
+	} else {
+		r.namespaces = namespaces
+	}
 }
 
-// Name returns the rule name
 func (r *BlockConnectionRule) Name() string {
 	return r.name
 }
 
-// IsEnabled returns whether the rule is enabled
 func (r *BlockConnectionRule) IsEnabled() bool {
 	return r.enabled
 }
 
-// Start begins periodic checking from Prometheus
 func (r *BlockConnectionRule) Start(ctx context.Context) {
 	if !r.enabled {
 		return
@@ -93,26 +92,18 @@ func (r *BlockConnectionRule) Start(ctx context.Context) {
 	}
 }
 
-// Stop stops the rule
 func (r *BlockConnectionRule) Stop() {
 	close(r.stopChan)
 }
 
-// Evaluate is called for each flow but we don't process flows directly
 func (r *BlockConnectionRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
-	// Rules now query from Prometheus, not from individual flows
 	return nil
 }
 
-// checkFromPrometheus queries Prometheus and checks for blocked connections
 func (r *BlockConnectionRule) checkFromPrometheus(ctx context.Context) {
 	r.mu.RLock()
 	namespaces := r.namespaces
 	r.mu.RUnlock()
-
-	if len(namespaces) == 0 {
-		namespaces = r.getNamespacesFromConfig()
-	}
 
 	for _, namespace := range namespaces {
 		r.checkNamespace(ctx, namespace)
@@ -142,6 +133,7 @@ func (r *BlockConnectionRule) checkNamespace(ctx context.Context, namespace stri
 		alert := &model.Alert{
 			Type:      r.name,
 			Severity:  r.severity,
+			Namespace: namespace,
 			Message:   fmt.Sprintf("Blocked connections detected in namespace %s: %.0f DROP flows in 1 minute (threshold: %.0f)", namespace, dropCount, r.threshold),
 			Timestamp: time.Now(),
 		}
@@ -150,13 +142,4 @@ func (r *BlockConnectionRule) checkNamespace(ctx context.Context, namespace stri
 			r.alertEmitter(alert)
 		}
 	}
-}
-
-func (r *BlockConnectionRule) getNamespacesFromConfig() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if len(r.namespaces) > 0 {
-		return r.namespaces
-	}
-	return []string{"default", "kube-system"}
 }

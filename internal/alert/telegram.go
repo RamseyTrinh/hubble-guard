@@ -94,12 +94,8 @@ func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 	return fmt.Errorf("failed to send alert after %d attempts", maxRetries)
 }
 
-// escapeMarkdown escapes special Markdown characters for Telegram
-// For Markdown mode, only need to escape: * _ ` [
-// For MarkdownV2, need to escape more characters
 func escapeMarkdown(text string, parseMode string) string {
 	if parseMode == "MarkdownV2" {
-		// MarkdownV2 requires escaping more characters
 		replacer := strings.NewReplacer(
 			"*", "\\*",
 			"_", "\\_",
@@ -123,7 +119,6 @@ func escapeMarkdown(text string, parseMode string) string {
 		return replacer.Replace(text)
 	}
 
-	// For Markdown mode, only escape: * _ ` [
 	replacer := strings.NewReplacer(
 		"*", "\\*",
 		"_", "\\_",
@@ -140,15 +135,12 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 		if err != nil {
 			tn.logger.Warnf("Failed to execute message template: %v, using default format", err)
 		} else {
-			// Template output should already be properly formatted
-			// Don't escape it as it may contain intentional Markdown formatting
 			return buf.String()
 		}
 	}
 
 	timestamp := alert.Timestamp.Format("2006-01-02 15:04:05")
 
-	// Escape user-provided content if using Markdown
 	severity := alert.Severity
 	typeStr := alert.Type
 	messageText := alert.Message

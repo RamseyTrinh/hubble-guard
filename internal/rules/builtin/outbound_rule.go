@@ -52,7 +52,7 @@ func NewOutboundRule(enabled bool, severity string, threshold float64, promClien
 		logger:          logger,
 		interval:        10 * time.Second,
 		stopChan:        make(chan struct{}),
-		namespaces:      []string{"default", "kube-system"},
+		namespaces:      []string{"default"},
 	}
 }
 
@@ -63,7 +63,11 @@ func (r *OutboundRule) SetAlertEmitter(emitter func(*model.Alert)) {
 func (r *OutboundRule) SetNamespaces(namespaces []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.namespaces = namespaces
+	if len(namespaces) == 0 {
+		r.namespaces = []string{"default"}
+	} else {
+		r.namespaces = namespaces
+	}
 }
 
 func (r *OutboundRule) Name() string {
@@ -116,7 +120,7 @@ func (r *OutboundRule) checkFromPrometheus(ctx context.Context) {
 	r.mu.RUnlock()
 
 	if len(namespaces) == 0 {
-		namespaces = []string{"default", "kube-system"}
+		namespaces = []string{"default"}
 	}
 
 	for _, namespace := range namespaces {
@@ -152,6 +156,7 @@ func (r *OutboundRule) checkNamespace(ctx context.Context, namespace string, sus
 			alert := &model.Alert{
 				Type:      r.name,
 				Severity:  r.severity,
+				Namespace: namespace,
 				Message:   fmt.Sprintf("Suspicious outbound connection detected in namespace %s: %.0f connections to port %d in 1 minute (threshold: %.0f)", namespace, count, port, r.threshold),
 				Timestamp: time.Now(),
 			}

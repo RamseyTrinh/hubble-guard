@@ -51,19 +51,16 @@ func (v Verdict) String() string {
 	}
 }
 
-// IP represents IP layer information
 type IP struct {
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
 }
 
-// L4 represents Layer 4 information
 type L4 struct {
 	TCP *TCP `json:"tcp,omitempty"`
 	UDP *UDP `json:"udp,omitempty"`
 }
 
-// TCP represents TCP information
 type TCP struct {
 	SourcePort      uint32    `json:"source_port"`
 	DestinationPort uint32    `json:"destination_port"`
@@ -71,14 +68,12 @@ type TCP struct {
 	Bytes           uint32    `json:"bytes"`
 }
 
-// UDP represents UDP information
 type UDP struct {
 	SourcePort      uint32 `json:"source_port"`
 	DestinationPort uint32 `json:"destination_port"`
 	Bytes           uint32 `json:"bytes"`
 }
 
-// TCPFlags represents TCP flags
 type TCPFlags struct {
 	SYN bool `json:"syn"`
 	ACK bool `json:"ack"`
@@ -120,12 +115,10 @@ func (f *TCPFlags) String() string {
 	return result
 }
 
-// L7 represents Layer 7 information
 type L7 struct {
 	Type L7Type `json:"type"`
 }
 
-// L7Type represents Layer 7 protocol type
 type L7Type int32
 
 const (
@@ -148,7 +141,6 @@ func (t L7Type) String() string {
 	}
 }
 
-// FlowType represents the type of flow
 type FlowType int32
 
 const (
@@ -168,7 +160,6 @@ func (t FlowType) String() string {
 	}
 }
 
-// Endpoint represents a network endpoint with namespace information
 type Endpoint struct {
 	Namespace   string            `json:"namespace"`
 	PodName     string            `json:"pod_name"`

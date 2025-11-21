@@ -56,19 +56,16 @@ type PrometheusMetrics struct {
 	portScanTracker *portScanTracker
 }
 
-// portScanEntry tracks ports seen for a source-dest pair
 type portScanEntry struct {
 	ports map[uint16]time.Time
 }
 
-// portScanTracker tracks distinct ports in 10s windows per source-dest pair
 type portScanTracker struct {
 	entries map[string]*portScanEntry
 	mu      sync.RWMutex
 	window  time.Duration
 }
 
-// newPortScanTracker creates a new port scan tracker
 func newPortScanTracker() *portScanTracker {
 	return &portScanTracker{
 		entries: make(map[string]*portScanEntry),
@@ -76,7 +73,6 @@ func newPortScanTracker() *portScanTracker {
 	}
 }
 
-// addPort adds a port to the tracker for a source-dest pair
 func (pst *portScanTracker) addPort(sourceIP, destIP string, port uint16) {
 	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
 	now := time.Now()
@@ -92,14 +88,11 @@ func (pst *portScanTracker) addPort(sourceIP, destIP string, port uint16) {
 		pst.entries[key] = entry
 	}
 
-	// Add or update port timestamp
 	entry.ports[port] = now
 
-	// Cleanup old ports (older than window)
 	pst.cleanupOldPorts(key, entry, now)
 }
 
-// cleanupOldPorts removes ports older than the window
 func (pst *portScanTracker) cleanupOldPorts(key string, entry *portScanEntry, now time.Time) {
 	for port, timestamp := range entry.ports {
 		if now.Sub(timestamp) > pst.window {
@@ -107,13 +100,11 @@ func (pst *portScanTracker) cleanupOldPorts(key string, entry *portScanEntry, no
 		}
 	}
 
-	// Remove entry if no ports left
 	if len(entry.ports) == 0 {
 		delete(pst.entries, key)
 	}
 }
 
-// getDistinctPortCount returns the count of distinct ports for a source-dest pair
 func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
 	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
 	now := time.Now()
@@ -126,13 +117,11 @@ func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
 		return 0
 	}
 
-	// Count valid ports (within window)
 	count := 0
 	for port, timestamp := range entry.ports {
 		if now.Sub(timestamp) <= pst.window {
 			count++
 		} else {
-			// Mark for cleanup (we'll do it in next addPort call)
 			delete(entry.ports, port)
 		}
 	}
@@ -140,10 +129,8 @@ func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
 	return count
 }
 
-// NewPrometheusMetrics tạo instance mới của PrometheusMetrics
 func NewPrometheusMetrics() *PrometheusMetrics {
 	return &PrometheusMetrics{
-		// Flow metrics
 		FlowTotal: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_flows_total",
@@ -192,7 +179,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"destination_ip", "destination_port", "namespace"},
 		),
 
-		// TCP metrics
 		TCPConnections: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_tcp_connections_total",
@@ -217,7 +203,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "direction"},
 		),
 
-		// UDP metrics
 		UDPPackets: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_udp_packets_total",
@@ -234,7 +219,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "direction"},
 		),
 
-		// L7 metrics
 		L7Requests: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_l7_requests_total",
@@ -251,7 +235,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"l7_type", "namespace"},
 		),
 
-		// Error metrics
 		FlowErrors: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_flow_errors_total",
@@ -268,7 +251,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"error_type"},
 		),
 
-		// Performance metrics
 		FlowProcessingTime: promauto.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "hubble_flow_processing_duration_seconds",
@@ -286,7 +268,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "protocol"},
 		),
 
-		// Anomaly detection metrics
 		BaselineTrafficRate: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "hubble_baseline_traffic_rate",
@@ -362,7 +343,7 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 	}
 }
 
-// RecordFlow ghi lại metrics cho một flow
+// Record metrics cho một flow
 func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	if flow == nil {
 		return

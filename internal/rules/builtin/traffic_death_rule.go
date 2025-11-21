@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type TrafficDeathRulePrometheus struct {
+type TrafficDeathRule struct {
 	name           string
 	enabled        bool
 	severity       string
@@ -29,8 +29,8 @@ type TrafficDeathRulePrometheus struct {
 	namespaces     []string
 }
 
-func NewTrafficDeathRulePrometheus(enabled bool, severity string, promClient PrometheusQueryClient, logger *logrus.Logger) *TrafficDeathRulePrometheus {
-	return &TrafficDeathRulePrometheus{
+func NewTrafficDeathRule(enabled bool, severity string, promClient PrometheusQueryClient, logger *logrus.Logger) *TrafficDeathRule {
+	return &TrafficDeathRule{
 		name:           "traffic_death",
 		enabled:        enabled,
 		severity:       severity,
@@ -40,29 +40,33 @@ func NewTrafficDeathRulePrometheus(enabled bool, severity string, promClient Pro
 		baselineStart:  make(map[string]time.Time),
 		baselineRates:  make(map[string][]float64),
 		logger:         logger,
-		interval:       10 * time.Second, // Check every 10 seconds
+		interval:       10 * time.Second,
 		stopChan:       make(chan struct{}),
-		namespaces:     []string{"default", "kube-system"},
+		namespaces:     []string{"default"},
 	}
 }
 
-func (r *TrafficDeathRulePrometheus) SetAlertEmitter(emitter func(*model.Alert)) {
+func (r *TrafficDeathRule) SetAlertEmitter(emitter func(*model.Alert)) {
 	r.alertEmitter = emitter
 }
 
-func (r *TrafficDeathRulePrometheus) SetNamespaces(namespaces []string) {
-	r.namespaces = namespaces
+func (r *TrafficDeathRule) SetNamespaces(namespaces []string) {
+	if len(namespaces) == 0 {
+		r.namespaces = []string{"default"}
+	} else {
+		r.namespaces = namespaces
+	}
 }
 
-func (r *TrafficDeathRulePrometheus) Name() string {
+func (r *TrafficDeathRule) Name() string {
 	return r.name
 }
 
-func (r *TrafficDeathRulePrometheus) IsEnabled() bool {
+func (r *TrafficDeathRule) IsEnabled() bool {
 	return r.enabled
 }
 
-func (r *TrafficDeathRulePrometheus) Start(ctx context.Context) {
+func (r *TrafficDeathRule) Start(ctx context.Context) {
 	if !r.enabled {
 		return
 	}
@@ -86,26 +90,21 @@ func (r *TrafficDeathRulePrometheus) Start(ctx context.Context) {
 	}
 }
 
-func (r *TrafficDeathRulePrometheus) Stop() {
+func (r *TrafficDeathRule) Stop() {
 	close(r.stopChan)
 }
 
-func (r *TrafficDeathRulePrometheus) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
+func (r *TrafficDeathRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
 	return nil
 }
 
-func (r *TrafficDeathRulePrometheus) checkFromPrometheus(ctx context.Context) {
-	namespaces := r.namespaces
-	if len(namespaces) == 0 {
-		namespaces = r.getNamespacesFromConfig()
-	}
-
-	for _, namespace := range namespaces {
+func (r *TrafficDeathRule) checkFromPrometheus(ctx context.Context) {
+	for _, namespace := range r.namespaces {
 		r.checkNamespace(ctx, namespace)
 	}
 }
 
-func (r *TrafficDeathRulePrometheus) checkNamespace(ctx context.Context, namespace string) {
+func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string) {
 	query := fmt.Sprintf(`rate(hubble_flows_total{namespace="%s"}[1m])`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
@@ -162,14 +161,12 @@ func (r *TrafficDeathRulePrometheus) checkNamespace(ctx context.Context, namespa
 
 	r.logger.Infof("[Traffic Death] Namespace: %s | Current rate: %.2f flows/sec | Baseline: %.2f flows/sec", namespace, currentRate, baseline)
 
-	// Update baseline if it's 0 and we have current rate
 	if baseline <= 0 && currentRate > 0 {
 		r.baseline[namespace] = currentRate
 		r.logger.Infof("[Traffic Death] Updating baseline for namespace %s: %.2f flows/sec", namespace, currentRate)
 		return
 	}
 
-	// Alert if current rate is 0 and baseline is positive (traffic has died)
 	if currentRate == 0.0 && baseline > 0 {
 		alert := &model.Alert{
 			Type:      r.name,
@@ -178,16 +175,8 @@ func (r *TrafficDeathRulePrometheus) checkNamespace(ctx context.Context, namespa
 			Timestamp: time.Now(),
 		}
 		r.logger.Warnf("Traffic Death Rule Alert: %s", alert.Message)
-		// Emit alert through emitter function
 		if r.alertEmitter != nil {
 			r.alertEmitter(alert)
 		}
 	}
-}
-
-func (r *TrafficDeathRulePrometheus) getNamespacesFromConfig() []string {
-	if len(r.namespaces) > 0 {
-		return r.namespaces
-	}
-	return []string{"default", "kube-system"}
 }
