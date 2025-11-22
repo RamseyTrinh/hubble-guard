@@ -82,7 +82,6 @@ data:
         #spike { background:#ff9800; color:white; }
         #ddos { background:#f44336; color:white; }
         #portscan { background:#9c27b0; color:white; }
-        #trafficdeath { background:#607d8b; color:white; }
         #suspicious { background:#e91e63; color:white; }
         #stop { background:#757575; color:white; }
         label { font-size:14px; }
@@ -113,7 +112,7 @@ data:
           </div>
           <div class="scenario-card">
             <h3>Traffic Spike <span class="rule-badge">traffic_spike</span></h3>
-            <p>Burst traffic để test Traffic Spike Rule</p>
+            <p>Burst traffic (30 requests every 3s) để test Traffic Spike Rule</p>
             <button id="spike">Start Spike</button>
           </div>
           <div class="scenario-card">
@@ -127,12 +126,7 @@ data:
             <button id="portscan">Start Port Scan</button>
           </div>
           <div class="scenario-card">
-            <h3>Traffic Death <span class="rule-badge">traffic_death</span></h3>
-            <p>Dừng tất cả traffic để test Traffic Death Rule</p>
-            <button id="trafficdeath">Stop Traffic</button>
-          </div>
-          <div class="scenario-card">
-            <h3>Suspicious Outbound <span class="rule-badge">suspicious_outbound</span></h3>
+            <h3>Suspicious Out<span class="rule-badge">suspicious_out</span></h3>
             <p>Traffic đến các port đáng ngờ (cần cấu hình network)</p>
             <button id="suspicious">Start Suspicious</button>
           </div>
@@ -141,7 +135,7 @@ data:
         <div class="row" style="margin-top:16px;">
           <button id="stop" style="background:#d32f2f;">Stop All</button>
           <label>Normal Interval (ms):
-            <input id="ival" type="number" value="500" min="100" step="100"/>
+            <input id="ival" type="number" value="3000" min="100" step="100"/>
           </label>
         </div>
 
@@ -232,7 +226,7 @@ data:
         document.getElementById('normal').onclick = () => {
           clearAllTimers();
           activeScenario = 'normal';
-          const ival = parseInt(document.getElementById('ival').value || 500, 10);
+          const ival = parseInt(document.getElementById('ival').value || 3000, 10);
           log(`Starting Normal Traffic (baseline) at ${ival}ms interval`, 'info');
           const timer = setInterval(() => {
             if (activeScenario !== 'normal') {
@@ -311,14 +305,6 @@ data:
             log(`Port scan batch sent (15 requests to different endpoints)`, 'warning');
           }, 200); // Every 200ms
           timers.push(timer);
-        };
-
-        // Traffic Death - Stop all traffic
-        document.getElementById('trafficdeath').onclick = () => {
-          clearAllTimers();
-          activeScenario = 'trafficdeath';
-          log('Traffic Death: All traffic stopped. Wait for Traffic Death Rule to detect.', 'warning');
-          // Don't start any timer, just stop everything
         };
 
         // Suspicious Outbound - Attempt connections to suspicious patterns
