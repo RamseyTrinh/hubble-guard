@@ -74,17 +74,13 @@ func (r *TrafficDeathRule) Start(ctx context.Context) {
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
-	r.logger.Infof("[Traffic Death] Starting periodic checks from Prometheus (interval: %v)", r.interval)
-
 	for {
 		select {
 		case <-ticker.C:
 			r.checkFromPrometheus(ctx)
 		case <-ctx.Done():
-			r.logger.Info("[Traffic Death] Stopping periodic checks")
 			return
 		case <-r.stopChan:
-			r.logger.Info("[Traffic Death] Rule stopped")
 			return
 		}
 	}
@@ -131,7 +127,7 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 			r.baselineStart[namespace] = time.Now()
 			r.baselineWindow[namespace] = 1 * time.Minute
 			r.baselineRates[namespace] = []float64{currentRate}
-			r.logger.Infof("[Traffic Death] Namespace: %s | Starting baseline collection (1 minute) | Rate: %.2f flows/sec", namespace, currentRate)
+			r.logger.Infof("[Traffic Death] Namespace: %s | Starting baseline collection in 1 minute", namespace)
 			return
 		}
 
@@ -139,8 +135,6 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 		elapsed := now.Sub(baselineStart)
 		if elapsed < r.baselineWindow[namespace] {
 			r.baselineRates[namespace] = append(r.baselineRates[namespace], currentRate)
-			remaining := r.baselineWindow[namespace] - elapsed
-			r.logger.Infof("[Traffic Death] Namespace: %s | Collecting baseline... Rate: %.2f flows/sec | Remaining: %.1f seconds", namespace, currentRate, remaining.Seconds())
 			return
 		}
 
@@ -151,7 +145,7 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 			}
 			avgBaseline := sum / float64(len(r.baselineRates[namespace]))
 			r.baseline[namespace] = avgBaseline
-			r.logger.Infof("[Traffic Death] Baseline calculated for namespace %s: %.2f flows/sec (from %d samples over 1 minute)", namespace, avgBaseline, len(r.baselineRates[namespace]))
+			r.logger.Infof("[Traffic Death] Namespace: %s | Baseline calculated: %.2f flows/sec", namespace, avgBaseline)
 			delete(r.baselineStart, namespace)
 			delete(r.baselineWindow, namespace)
 			delete(r.baselineRates, namespace)
@@ -159,11 +153,9 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 		return
 	}
 
-	r.logger.Infof("[Traffic Death] Namespace: %s | Current rate: %.2f flows/sec | Baseline: %.2f flows/sec", namespace, currentRate, baseline)
-
 	if baseline <= 0 && currentRate > 0 {
 		r.baseline[namespace] = currentRate
-		r.logger.Infof("[Traffic Death] Updating baseline for namespace %s: %.2f flows/sec", namespace, currentRate)
+		r.logger.Infof("[Traffic Death] Namespace: %s | Updating baseline: %.2f flows/sec", namespace, currentRate)
 		return
 	}
 

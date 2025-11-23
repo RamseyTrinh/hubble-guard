@@ -100,7 +100,7 @@ func (r *PortScanRule) checkFromPrometheus(ctx context.Context) {
 }
 
 func (r *PortScanRule) checkNamespace(ctx context.Context, namespace string) {
-	query := fmt.Sprintf(`portscan_distinct_ports_10s{namespace="%s"} > 0`, namespace)
+	query := fmt.Sprintf(`portscan_distinct_ports_10s{namespace="%s"}`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
 	if err != nil {

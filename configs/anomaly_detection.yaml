@@ -13,7 +13,6 @@ prometheus:
 
 namespaces:
   - "default"
-  - "test"
 
 detection:
   baseline_multiplier: 3.0
@@ -29,7 +28,7 @@ rules:
       multiplier: 3.0
   
   - name: "traffic_spike"
-    enabled: true
+    enabled: false
     severity: "CRITICAL"
     description: "Phát hiện traffic spike có thể là DDoS (từ Prometheus)"
     thresholds:
@@ -66,7 +65,7 @@ rules:
     severity: "HIGH"
     description: "Phát hiện port scanning"
     thresholds:
-      ports_per_minute: 50
+      ports_per_minute: 30
   
   - name: "block_connection"
     enabled: true
@@ -117,21 +116,9 @@ alerting:
   telegram:
     bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"
     chat_id: "5037781514"
-    parse_mode: "Markdown"
+    parse_mode: ""
     enabled: true
-    message_template: |
-      🚨 *{{ .Severity }} Alert*
-      
-      *Type:* {{ .Type }}
-      *Time:* {{ formatTime .Timestamp "2006-01-02 15:04:05" }}
-      *Message:* {{ .Message }}
-      
-      {{ if and .FlowData .FlowData.Source }}
-      *Source:* {{ .FlowData.Source.Namespace }}/{{ .FlowData.Source.PodName }}
-      {{ end }}
-      {{ if and .FlowData .FlowData.Destination }}
-      *Destination:* {{ .FlowData.Destination.Namespace }}/{{ .FlowData.Destination.PodName }}
-      {{ end }}
+    message_template: ""
 
 logging:
   level: "INFO"

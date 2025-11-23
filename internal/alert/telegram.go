@@ -139,44 +139,34 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 		}
 	}
 
+	// Format timestamp
 	timestamp := alert.Timestamp.Format("2006-01-02 15:04:05")
 
-	severity := alert.Severity
-	typeStr := alert.Type
-	messageText := alert.Message
-
-	if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
-		severity = escapeMarkdown(severity, tn.parseMode)
-		typeStr = escapeMarkdown(typeStr, tn.parseMode)
-		messageText = escapeMarkdown(messageText, tn.parseMode)
+	// Get namespace - prefer from alert, fallback to FlowData
+	namespace := alert.Namespace
+	if namespace == "" && alert.FlowData != nil {
+		if alert.FlowData.Source != nil && alert.FlowData.Source.Namespace != "" {
+			namespace = alert.FlowData.Source.Namespace
+		} else if alert.FlowData.Destination != nil && alert.FlowData.Destination.Namespace != "" {
+			namespace = alert.FlowData.Destination.Namespace
+		}
+	}
+	if namespace == "" {
+		namespace = "unknown"
 	}
 
-	message := fmt.Sprintf("🚨 *%s Alert*\n\n*Type:* %s\n*Time:* %s\n*Message:* %s",
-		severity,
-		typeStr,
+	// Format message according to user's requirement
+	message := fmt.Sprintf("ALERT FIRING: Anomaly Detect\n\n"+
+		"alert_name: %s\n"+
+		"time: %s\n"+
+		"severity: %s\n"+
+		"namespace: %s\n"+
+		"description: %s",
+		alert.Type,
 		timestamp,
-		messageText)
-
-	if alert.FlowData != nil {
-		if alert.FlowData.Source != nil {
-			namespace := alert.FlowData.Source.Namespace
-			podName := alert.FlowData.Source.PodName
-			if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
-				namespace = escapeMarkdown(namespace, tn.parseMode)
-				podName = escapeMarkdown(podName, tn.parseMode)
-			}
-			message += fmt.Sprintf("\n*Source:* %s/%s", namespace, podName)
-		}
-		if alert.FlowData.Destination != nil {
-			namespace := alert.FlowData.Destination.Namespace
-			podName := alert.FlowData.Destination.PodName
-			if tn.parseMode == "Markdown" || tn.parseMode == "MarkdownV2" {
-				namespace = escapeMarkdown(namespace, tn.parseMode)
-				podName = escapeMarkdown(podName, tn.parseMode)
-			}
-			message += fmt.Sprintf("\n*Destination:* %s/%s", namespace, podName)
-		}
-	}
+		alert.Severity,
+		namespace,
+		alert.Message)
 
 	return message
 }
@@ -184,10 +174,16 @@ func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 func (tn *TelegramNotifier) sendMessage(text string) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", tn.botToken)
 
+	// Use empty parse_mode to avoid parsing errors with special characters
+	parseMode := ""
+	if tn.parseMode != "" && tn.parseMode != "Markdown" && tn.parseMode != "MarkdownV2" {
+		parseMode = tn.parseMode
+	}
+
 	message := TelegramMessage{
 		ChatID:    tn.chatID,
 		Text:      text,
-		ParseMode: tn.parseMode,
+		ParseMode: parseMode,
 	}
 
 	jsonData, err := json.Marshal(message)

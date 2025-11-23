@@ -269,7 +269,7 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 			destPort = uint16(flow.L4.UDP.DestinationPort)
 		}
 		if destPort > 0 {
-			c.metrics.UpdatePortScanDistinctPorts(flow.IP.Source, flow.IP.Destination, destPort)
+			c.metrics.UpdatePortScanDistinctPorts(flow.IP.Source, flow.IP.Destination, namespace, destPort)
 		}
 	}
 
@@ -296,7 +296,6 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 	default:
 	}
 
-	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println("Flow logging disabled - only baseline monitoring enabled")
 	fmt.Println(strings.Repeat("=", 80))
 
@@ -388,7 +387,6 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetrics(ctx context.Context, namespace
 	if namespace != "" {
 		fmt.Printf("Filtering flows for namespace: %s\n", namespace)
 	}
-	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println(strings.Repeat("=", 80))
 
 	client := observer.NewObserverClient(c.conn)

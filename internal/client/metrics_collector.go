@@ -2,6 +2,7 @@ package client
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -64,12 +65,15 @@ type portScanTracker struct {
 	entries map[string]*portScanEntry
 	mu      sync.RWMutex
 	window  time.Duration
+	// Track which metrics need to be updated
+	metricKeys map[string]string // key -> "sourceIP:destIP:namespace"
 }
 
 func newPortScanTracker() *portScanTracker {
 	return &portScanTracker{
-		entries: make(map[string]*portScanEntry),
-		window:  10 * time.Second,
+		entries:    make(map[string]*portScanEntry),
+		metricKeys: make(map[string]string),
+		window:     10 * time.Second,
 	}
 }
 
@@ -88,42 +92,45 @@ func (pst *portScanTracker) addPort(sourceIP, destIP string, port uint16) {
 		pst.entries[key] = entry
 	}
 
+	// Always update timestamp for this port (even if it already exists)
+	// This ensures the port stays in the window if it's accessed again
 	entry.ports[port] = now
 
-	pst.cleanupOldPorts(key, entry, now)
-}
-
-func (pst *portScanTracker) cleanupOldPorts(key string, entry *portScanEntry, now time.Time) {
-	for port, timestamp := range entry.ports {
-		if now.Sub(timestamp) > pst.window {
-			delete(entry.ports, port)
-		}
-	}
-
-	if len(entry.ports) == 0 {
-		delete(pst.entries, key)
-	}
+	// Don't cleanup here - let getDistinctPortCount handle cleanup
+	// This ensures all ports added in quick succession are counted correctly
 }
 
 func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
 	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
 	now := time.Now()
 
-	pst.mu.RLock()
-	defer pst.mu.RUnlock()
+	pst.mu.Lock()
+	defer pst.mu.Unlock()
 
 	entry, exists := pst.entries[key]
 	if !exists {
 		return 0
 	}
 
+	// Count ports within window and cleanup old ones
 	count := 0
+	portsToDelete := []uint16{}
 	for port, timestamp := range entry.ports {
 		if now.Sub(timestamp) <= pst.window {
 			count++
 		} else {
-			delete(entry.ports, port)
+			portsToDelete = append(portsToDelete, port)
 		}
+	}
+
+	// Cleanup old ports
+	for _, port := range portsToDelete {
+		delete(entry.ports, port)
+	}
+
+	// Delete entry if no ports left
+	if len(entry.ports) == 0 {
+		delete(pst.entries, key)
 	}
 
 	return count
@@ -321,7 +328,7 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 				Name: "portscan_distinct_ports_10s",
 				Help: "Number of distinct destination ports in the last 10 seconds per source-dest pair",
 			},
-			[]string{"source_ip", "dest_ip"},
+			[]string{"source_ip", "dest_ip", "namespace"},
 		),
 
 		NamespaceAccess: promauto.NewCounterVec(
@@ -558,7 +565,7 @@ func (m *PrometheusMetrics) RecordTCPDrop(namespace, sourceIP, destIP string) {
 }
 
 // UpdatePortScanDistinctPorts updates the distinct ports count for port scan detection
-func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP string, port uint16) {
+func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP, namespace string, port uint16) {
 	if m.portScanTracker == nil {
 		return
 	}
@@ -566,9 +573,69 @@ func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP string,
 	// Add port to tracker
 	m.portScanTracker.addPort(sourceIP, destIP, port)
 
+	// Track metric key for cleanup
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+	m.portScanTracker.mu.Lock()
+	m.portScanTracker.metricKeys[key] = fmt.Sprintf("%s:%s:%s", sourceIP, destIP, namespace)
+	m.portScanTracker.mu.Unlock()
+
 	// Get current distinct port count
 	count := m.portScanTracker.getDistinctPortCount(sourceIP, destIP)
 
-	// Update metric
-	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP).Set(float64(count))
+	// Always update metric (even if 0, to ensure cleanup)
+	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
+}
+
+// CleanupPortScanMetrics periodically cleans up old port scan metrics
+func (m *PrometheusMetrics) CleanupPortScanMetrics() {
+	if m.portScanTracker == nil {
+		return
+	}
+
+	m.portScanTracker.mu.Lock()
+	defer m.portScanTracker.mu.Unlock()
+
+	now := time.Now()
+	keysToDelete := []string{}
+
+	for key, entry := range m.portScanTracker.entries {
+		// Cleanup old ports
+		for port, timestamp := range entry.ports {
+			if now.Sub(timestamp) > m.portScanTracker.window {
+				delete(entry.ports, port)
+			}
+		}
+
+		// Count remaining ports
+		count := 0
+		for _, timestamp := range entry.ports {
+			if now.Sub(timestamp) <= m.portScanTracker.window {
+				count++
+			}
+		}
+
+		// Update metric or delete if no ports
+		if metricKey, exists := m.portScanTracker.metricKeys[key]; exists {
+			parts := strings.Split(metricKey, ":")
+			if len(parts) == 3 {
+				sourceIP, destIP, namespace := parts[0], parts[1], parts[2]
+				if count == 0 {
+					m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(0)
+					keysToDelete = append(keysToDelete, key)
+				} else {
+					m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
+				}
+			}
+		}
+
+		// Delete entry if no ports
+		if len(entry.ports) == 0 {
+			delete(m.portScanTracker.entries, key)
+		}
+	}
+
+	// Cleanup metric keys
+	for _, key := range keysToDelete {
+		delete(m.portScanTracker.metricKeys, key)
+	}
 }

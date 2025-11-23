@@ -41,8 +41,8 @@ func NewDDoSRule(enabled bool, severity string, threshold float64, logger *logru
 		lastReset:      make(map[string]time.Time),
 		baselineStart:  make(map[string]time.Time),
 		logger:         logger,
-		window:         1 * time.Minute,
-		baselineWindow: 5 * time.Minute,
+		window:         10 * time.Second, // Check every 10 seconds
+		baselineWindow: 1 * time.Minute,  // Collect baseline for 1 minute
 	}
 }
 
@@ -80,7 +80,7 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 	if !baselineExists {
 		r.baselineStart[namespace] = now
 		r.flowCounts[namespace] = 1
-		r.logger.Debugf("[DDoS] Namespace: %s | Starting baseline collection", namespace)
+		r.logger.Infof("[DDoS] Namespace: %s | Starting baseline collection in %.0f seconds", namespace, r.baselineWindow.Seconds())
 		return nil
 	}
 
@@ -88,8 +88,6 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 	baselineElapsed := now.Sub(baselineStart)
 	if baselineElapsed < r.baselineWindow {
 		r.flowCounts[namespace]++
-		r.logger.Debugf("[DDoS] Namespace: %s | Collecting baseline... Flows: %d | Elapsed: %.1fs",
-			namespace, r.flowCounts[namespace], baselineElapsed.Seconds())
 		return nil
 	}
 
@@ -140,8 +138,8 @@ func (r *DDoSRule) checkDDoSAttack(namespace string, elapsed time.Duration) *mod
 	currentRate := float64(r.flowCounts[namespace]) / elapsed.Minutes()
 	multiplier := currentRate / baseline
 
-	r.logger.Debugf("[DDoS] Namespace: %s | Current: %.2f flows/min | Baseline: %.2f flows/min | Multiplier: %.2fx",
-		namespace, currentRate, baseline, multiplier)
+	r.logger.Infof("[DDoS] Namespace: %s | Current: %.2f flows/min | Baseline: %.2f flows/min | Multiplier: %.2fx (threshold: %.2fx)",
+		namespace, currentRate, baseline, multiplier, r.threshold)
 
 	if multiplier > r.threshold {
 		alert := &model.Alert{

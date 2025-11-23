@@ -12,6 +12,8 @@ import (
 
 	"hubble-anomaly-detector/internal/alert"
 	"hubble-anomaly-detector/internal/client"
+	"hubble-anomaly-detector/internal/model"
+	"hubble-anomaly-detector/internal/pipeline"
 	"hubble-anomaly-detector/internal/rules"
 	"hubble-anomaly-detector/internal/utils"
 
@@ -140,12 +142,7 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.AnomalyDetection
 }
 
 func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.AnomalyDetectionConfig) {
-	fmt.Println("\nANOMALY DETECTION MODE (Prometheus-based)")
-	fmt.Println("Press Ctrl+C to return to main menu")
-	fmt.Println("")
-	fmt.Println(" Flows will be collected and sent to Prometheus metrics")
-	fmt.Println(" Rules will query Prometheus periodically to detect anomalies")
-	fmt.Println("")
+	fmt.Println("\n =============================================== ANOMALY DETECTION ===============================================\n")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -183,12 +180,19 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 		}
 	}()
 
-	fmt.Println(" Rules running in background, querying Prometheus...")
 	fmt.Println(" Flow collection started!")
 	fmt.Println("")
 
+	// Create processor to evaluate flows with rules
+	processor := pipeline.NewProcessor(engine)
+
 	err := hubbleClient.StreamFlowsWithMetricsOnly(ctx, namespaces, func(ns string) {
-	}, nil)
+	}, func(flow *model.Flow) {
+		// Process flow through engine to evaluate rules
+		if err := processor.Process(ctx, flow); err != nil {
+			logger.Errorf("Failed to process flow: %v", err)
+		}
+	})
 	if err != nil {
 		if err == context.Canceled {
 			fmt.Println("Flow collection stopped by user")
