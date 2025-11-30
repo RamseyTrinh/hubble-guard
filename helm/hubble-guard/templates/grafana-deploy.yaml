@@ -44,6 +44,16 @@ spec:
               value: {{ .Values.grafana.rootUrl | quote }}
             - name: GF_INSTALL_PLUGINS
               value: {{ .Values.grafana.plugins | join "," | quote }}
+            - name: GF_SECURITY_ALLOW_EMBEDDING
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: "Viewer"
+            - name: GF_SECURITY_COOKIE_SAMESITE
+              value: "none"
+            - name: GF_SECURITY_COOKIE_SECURE
+              value: "false"
           livenessProbe:
             httpGet:
               path: /api/health

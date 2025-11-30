@@ -1,6 +1,6 @@
 # Hubble Anomaly Detector Makefile
 
-.PHONY: build run clean test deps help
+.PHONY: build run clean test deps help api-run api-build
 
 # Variables
 BINARY_NAME=hubble-anomaly-detector
@@ -33,11 +33,24 @@ run-dev: build
 	@echo "Running $(BINARY_NAME) in development mode..."
 	@./$(BUILD_DIR)/$(BINARY_NAME) --log-level=debug --hubble-server=localhost:4245
 
+# API Server commands (run from root)
+api-run:
+	@echo "Starting API server on port 5001..."
+	@go run api/main.go -port=5001 -config=configs/anomaly_detection.yaml
+
+api-build:
+	@echo "Building API server..."
+	@mkdir -p bin
+	@go build -o bin/api-server api/main.go
+	@echo "Binary built: bin/api-server"
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 	@rm -f alerts.log
+	@rm -f bin/api-server
+	@rm -f bin/api-server.exe
 	@echo "Clean complete"
 
 # Install dependencies
@@ -158,6 +171,8 @@ help:
 	@echo "  build          - Build the application"
 	@echo "  run            - Build and run the application"
 	@echo "  run-dev        - Run in development mode with debug logging"
+	@echo "  api-run        - Run API server (from root directory)"
+	@echo "  api-build      - Build API server binary"
 	@echo "  clean          - Clean build artifacts"
 	@echo "  deps           - Install dependencies"
 	@echo "  test           - Run tests"

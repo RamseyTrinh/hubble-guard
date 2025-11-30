@@ -539,8 +539,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "yellow",
@@ -641,8 +640,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -735,8 +733,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -829,8 +826,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -923,8 +919,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               },
               {
                 "color": "yellow",
@@ -1025,8 +1020,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
-                "value": null
+                "color": "green"
               }
             ]
           },
@@ -1085,7 +1079,7 @@
     "list": [
       {
         "current": {
-          "selected": true,
+          "selected": false,
           "text": "Prometheus",
           "value": "PBFA97CFB590B2093"
         },
@@ -1123,8 +1117,8 @@
     ]
   },
   "timezone": "browser",
-  "title": "Hubble Anomaly Detector - Network Monitoring Dashboard",
-  "uid": "hubble-anomaly-detector",
-  "version": 1,
+  "title": "Hubble Guard - Network Monitoring Dashboard",
+  "uid": "hubble-guard",
+  "version": 3,
   "weekStart": ""
 }

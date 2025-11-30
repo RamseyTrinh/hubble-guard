@@ -123,3 +123,33 @@ Grafana service name
 {{- printf "%s-grafana" (include "hubble-guard.fullname" .) }}
 {{- end }}
 
+{{/*
+UI labels
+*/}}
+{{- define "hubble-guard.ui.labels" -}}
+{{ include "hubble-guard.labels" . }}
+app.kubernetes.io/component: ui
+{{- end }}
+
+{{/*
+UI selector labels
+*/}}
+{{- define "hubble-guard.ui.selectorLabels" -}}
+{{ include "hubble-guard.selectorLabels" . }}
+app.kubernetes.io/component: ui
+{{- end }}
+
+{{/*
+UI service name
+*/}}
+{{- define "hubble-guard.ui.serviceName" -}}
+{{- printf "%s-ui" (include "hubble-guard.fullname" .) }}
+{{- end }}
+
+{{/*
+Anomaly Detector service name
+*/}}
+{{- define "hubble-guard.anomalyDetector.serviceName" -}}
+{{- printf "%s-anomaly-detector" (include "hubble-guard.fullname" .) }}
+{{- end }}
+

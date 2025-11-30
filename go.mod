@@ -6,6 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/cilium/cilium v1.18.1
+	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/prometheus/common v0.66.1
 	github.com/sirupsen/logrus v1.9.3
 	google.golang.org/grpc v1.74.2
@@ -26,6 +27,7 @@ require (
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/gorilla/mux v1.8.1
 	github.com/prometheus/client_golang v1.23.2
 	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sys v0.35.0 // indirect

@@ -286,6 +286,54 @@ grafana:
     port: 3000
     annotations: {}
 
+# UI configuration
+ui:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: docker.io/ramseytrinh338/hubble-ui
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  
+  imagePullSecrets: []
+  
+  podAnnotations: {}
+  
+  podSecurityContext: {}
+  
+  securityContext: {}
+  
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+  
+  nodeSelector: {}
+  
+  tolerations: []
+  
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 80
+    annotations: {}
+  
+  ingress:
+    enabled: false
+    className: "nginx"
+    annotations: {}
+    hosts:
+      - host: hubble-ui.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
 # Global settings
 nameOverride: ""
 fullnameOverride: ""
