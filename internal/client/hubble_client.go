@@ -279,7 +279,7 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 }
 
 func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
-	fmt.Println("Starting to stream flows from Hubble relay with metrics (no flow logs)...")
+	fmt.Println("Starting to stream flows from Hubble relay with metrics")
 
 	var nsList []string
 	switch v := namespaces.(type) {
@@ -296,7 +296,6 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 	default:
 	}
 
-	fmt.Println("Flow logging disabled - only baseline monitoring enabled")
 	fmt.Println(strings.Repeat("=", 80))
 
 	client := observer.NewObserverClient(c.conn)

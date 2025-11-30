@@ -28,7 +28,7 @@ rules:
       multiplier: 3.0
   
   - name: "traffic_spike"
-    enabled: false
+    enabled: true
     severity: "CRITICAL"
     description: "Phát hiện traffic spike có thể là DDoS (từ Prometheus)"
     thresholds:

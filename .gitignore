@@ -1,3 +1,11 @@
 .json
 build/
 prometheus_config.json
+
+# UI dependencies
+ui/node_modules/
+ui/.next/
+ui/out/
+ui/dist/
+ui/build/
+ui/.vercel/

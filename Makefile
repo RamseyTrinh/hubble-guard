@@ -85,7 +85,7 @@ release: clean build-all
 	@echo "Creating release package..."
 	@mkdir -p $(BUILD_DIR)/release
 	@cp $(BUILD_DIR)/$(BINARY_NAME)-* $(BUILD_DIR)/release/
-	@cp README.md config.json $(BUILD_DIR)/release/
+	@cp README.md $(BUILD_DIR)/release/
 	@cd $(BUILD_DIR) && tar -czf $(BINARY_NAME)-$(VERSION).tar.gz release/
 	@echo "Release package created: $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION).tar.gz"
 
