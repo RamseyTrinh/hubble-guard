@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"hubble-anomaly-detector/internal/client"
 	"hubble-anomaly-detector/internal/model"
 
 	"github.com/sirupsen/logrus"
@@ -64,6 +65,8 @@ func (e *Engine) Evaluate(ctx context.Context, flow *model.Flow) []model.Alert {
 }
 
 func (e *Engine) EmitAlert(alert model.Alert) {
+	RecordAlertMetrics(alert)
+
 	select {
 	case e.alertChannel <- alert:
 	default:
@@ -79,6 +82,30 @@ func (e *Engine) EmitAlert(alert model.Alert) {
 		if err := notifier.SendAlert(alert); err != nil {
 			e.logger.Errorf("Failed to send alert: %v", err)
 		}
+	}
+}
+
+var globalMetrics *client.PrometheusMetrics
+
+func SetGlobalMetrics(metrics *client.PrometheusMetrics) {
+	globalMetrics = metrics
+}
+
+func RecordAlertMetrics(alert model.Alert) {
+	if globalMetrics != nil {
+		namespace := alert.Namespace
+		if namespace == "" {
+			namespace = "unknown"
+		}
+		severity := alert.Severity
+		if severity == "" {
+			severity = "unknown"
+		}
+		alertType := alert.Type
+		if alertType == "" {
+			alertType = "unknown"
+		}
+		globalMetrics.RecordAlert(namespace, severity, alertType)
 	}
 }
 

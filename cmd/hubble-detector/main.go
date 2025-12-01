@@ -98,6 +98,8 @@ func main() {
 
 	engine := rules.NewEngine(logger)
 
+	rules.SetGlobalMetrics(exporter.GetMetrics())
+
 	utils.RegisterBuiltinRulesFromYAML(engine, config, logger, promClient)
 
 	registerAlertNotifiers(engine, config, logger)

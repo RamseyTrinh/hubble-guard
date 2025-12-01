@@ -53,6 +53,9 @@ type PrometheusMetrics struct {
 	NamespaceAccess        *prometheus.CounterVec // Cross-namespace access tracking
 	SuspiciousOutbound     *prometheus.CounterVec // Suspicious outbound connections tracking
 
+	// Alert metrics
+	AlertCounter *prometheus.CounterVec // Total alerts detected
+
 	// Port scan tracking
 	portScanTracker *portScanTracker
 }
@@ -346,6 +349,15 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"namespace", "destination_port"},
 		),
+
+		AlertCounter: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hubble_guard_alerts_total",
+				Help: "Total alerts detected",
+			},
+			[]string{"namespace", "severity", "type"},
+		),
+
 		portScanTracker: newPortScanTracker(),
 	}
 }
@@ -514,75 +526,60 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	}
 }
 
-// RecordError ghi lại lỗi
 func (m *PrometheusMetrics) RecordError(errorType, namespace string) {
 	m.FlowErrors.WithLabelValues(errorType, namespace).Inc()
 }
 
-// RecordConnectionError ghi lại lỗi kết nối
 func (m *PrometheusMetrics) RecordConnectionError(errorType string) {
 	m.ConnectionErrors.WithLabelValues(errorType).Inc()
 }
 
-// RecordProcessingTime ghi lại thời gian xử lý
 func (m *PrometheusMetrics) RecordProcessingTime(namespace string, duration float64) {
 	m.FlowProcessingTime.WithLabelValues(namespace).Observe(duration)
 }
 
-// UpdateActiveConnections cập nhật số lượng kết nối đang hoạt động
 func (m *PrometheusMetrics) UpdateActiveConnections(namespace, protocol string, count float64) {
 	m.ActiveConnections.WithLabelValues(namespace, protocol).Set(count)
 }
 
-// UpdateBaselineTrafficRate cập nhật baseline traffic rate
 func (m *PrometheusMetrics) UpdateBaselineTrafficRate(namespace string, rate float64) {
 	m.BaselineTrafficRate.WithLabelValues(namespace).Set(rate)
 }
 
-// UpdateTrafficSpikeMultiplier cập nhật traffic spike multiplier
 func (m *PrometheusMetrics) UpdateTrafficSpikeMultiplier(namespace string, multiplier float64) {
 	m.TrafficSpikeMultiplier.WithLabelValues(namespace).Set(multiplier)
 }
 
-// RecordNewDestination ghi lại kết nối đến destination mới
 func (m *PrometheusMetrics) RecordNewDestination(sourceIP, destIP, namespace string) {
 	m.NewDestinations.WithLabelValues(sourceIP, destIP, namespace).Inc()
 }
 
-// RecordErrorResponse ghi lại error response
 func (m *PrometheusMetrics) RecordErrorResponse(namespace, errorType string) {
 	m.ErrorResponseRate.WithLabelValues(namespace, errorType).Inc()
 }
 
-// RecordTCPReset ghi lại TCP reset
 func (m *PrometheusMetrics) RecordTCPReset(namespace, sourceIP, destIP string) {
 	m.TCPResetRate.WithLabelValues(namespace, sourceIP, destIP).Inc()
 }
 
-// RecordTCPDrop ghi lại TCP drop
 func (m *PrometheusMetrics) RecordTCPDrop(namespace, sourceIP, destIP string) {
 	m.TCPDropRate.WithLabelValues(namespace, sourceIP, destIP).Inc()
 }
 
-// UpdatePortScanDistinctPorts updates the distinct ports count for port scan detection
 func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP, namespace string, port uint16) {
 	if m.portScanTracker == nil {
 		return
 	}
 
-	// Add port to tracker
 	m.portScanTracker.addPort(sourceIP, destIP, port)
 
-	// Track metric key for cleanup
 	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
 	m.portScanTracker.mu.Lock()
 	m.portScanTracker.metricKeys[key] = fmt.Sprintf("%s:%s:%s", sourceIP, destIP, namespace)
 	m.portScanTracker.mu.Unlock()
 
-	// Get current distinct port count
 	count := m.portScanTracker.getDistinctPortCount(sourceIP, destIP)
 
-	// Always update metric (even if 0, to ensure cleanup)
 	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
 }
 
@@ -599,14 +596,12 @@ func (m *PrometheusMetrics) CleanupPortScanMetrics() {
 	keysToDelete := []string{}
 
 	for key, entry := range m.portScanTracker.entries {
-		// Cleanup old ports
 		for port, timestamp := range entry.ports {
 			if now.Sub(timestamp) > m.portScanTracker.window {
 				delete(entry.ports, port)
 			}
 		}
 
-		// Count remaining ports
 		count := 0
 		for _, timestamp := range entry.ports {
 			if now.Sub(timestamp) <= m.portScanTracker.window {
@@ -614,7 +609,6 @@ func (m *PrometheusMetrics) CleanupPortScanMetrics() {
 			}
 		}
 
-		// Update metric or delete if no ports
 		if metricKey, exists := m.portScanTracker.metricKeys[key]; exists {
 			parts := strings.Split(metricKey, ":")
 			if len(parts) == 3 {
@@ -628,14 +622,25 @@ func (m *PrometheusMetrics) CleanupPortScanMetrics() {
 			}
 		}
 
-		// Delete entry if no ports
 		if len(entry.ports) == 0 {
 			delete(m.portScanTracker.entries, key)
 		}
 	}
 
-	// Cleanup metric keys
 	for _, key := range keysToDelete {
 		delete(m.portScanTracker.metricKeys, key)
 	}
+}
+
+func (m *PrometheusMetrics) RecordAlert(namespace, severity, alertType string) {
+	if namespace == "" {
+		namespace = "unknown"
+	}
+	if severity == "" {
+		severity = "unknown"
+	}
+	if alertType == "" {
+		alertType = "unknown"
+	}
+	m.AlertCounter.WithLabelValues(namespace, severity, alertType).Inc()
 }

@@ -16,17 +16,13 @@ import {
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import DashboardIcon from '@mui/icons-material/Dashboard'
-import WarningIcon from '@mui/icons-material/Warning'
 import NetworkCheckIcon from '@mui/icons-material/NetworkCheck'
-import RuleIcon from '@mui/icons-material/Rule'
 
 const drawerWidth = 240
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
-  { text: 'Anomaly Detection', icon: <WarningIcon />, path: '/anomalies' },
   { text: 'Flow Viewer', icon: <NetworkCheckIcon />, path: '/flows' },
-  { text: 'Rules Management', icon: <RuleIcon />, path: '/rules' },
 ]
 
 export default function Layout({ children }) {

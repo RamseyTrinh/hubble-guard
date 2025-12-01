@@ -12,33 +12,26 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
   const [error, setError] = useState(null)
   const [iframeKey, setIframeKey] = useState(0)
 
-  // Generate Grafana embed URL
   const getEmbedUrl = () => {
     if (!dashboardUid) {
       return null
     }
 
-    // Use direct URL by default (Grafana needs to allow embedding)
-    // Proxy mode can be enabled but Grafana needs subpath config
     let baseUrl
     if (USE_PROXY && import.meta.env.DEV) {
-      // Use Vite proxy (requires Grafana subpath config)
       baseUrl = '/grafana'
     } else {
-      // Use direct URL (simpler, requires Grafana to allow embedding)
       baseUrl = GRAFANA_URL.replace(/\/$/, '')
     }
 
     let url = `${baseUrl}/d/${dashboardUid}`
     
-    // Add panel ID if specified
     if (panelId) {
       url += `?viewPanel=${panelId}`
     } else {
-      url += '?kiosk=tv' // TV mode - hides header and sidebar
+      url += '?kiosk=tv'
     }
 
-    // Add time range and refresh
     url += `&from=now-1h&to=now&refresh=30s`
 
     return url
@@ -65,13 +58,12 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
   useEffect(() => {
     if (!embedUrl) return
 
-    // Set a timeout to detect if iframe fails to load
     const timeout = setTimeout(() => {
       if (loading) {
         setLoading(false)
         setError(`Grafana dashboard is taking too long to load. Please check if Grafana is running at ${GRAFANA_URL}`)
       }
-    }, 10000) // 10 seconds timeout
+    }, 10000)
 
     return () => clearTimeout(timeout)
   }, [loading, embedUrl])
@@ -144,7 +136,6 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
             onLoad={handleLoad}
             onError={handleError}
             allow="fullscreen"
-            // Remove sandbox to allow cross-origin iframe (only for development)
             sandbox={USE_PROXY && import.meta.env.DEV ? undefined : "allow-same-origin allow-scripts allow-popups allow-forms"}
           />
         )}
@@ -152,7 +143,7 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
 
       {embedUrl && (
         <Typography variant="caption" color="textSecondary" sx={{ mt: 1, display: 'block' }}>
-          Grafana URL: {embedUrl.replace(/\/\/.*@/, '//***:***@')} {/* Hide credentials */}
+          Grafana URL: {embedUrl.replace(/\/\/.*@/, '//***:***@')}
         </Typography>
       )}
     </Paper>
