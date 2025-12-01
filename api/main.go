@@ -14,7 +14,6 @@ import (
 	"hubble-anomaly-detector/api/internal/handlers"
 	"hubble-anomaly-detector/api/internal/storage"
 	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
 	"hubble-anomaly-detector/internal/utils"
 
 	"github.com/gorilla/mux"
@@ -43,26 +42,31 @@ func main() {
 	// Create shared Prometheus metrics instance (singleton to avoid duplicate registration)
 	sharedMetrics := client.NewPrometheusMetrics()
 
-	// Create Hubble client for WebSocket streaming
-	hubbleClient, err := client.NewHubbleGRPCClientWithMetrics(config.Application.HubbleServer, sharedMetrics)
+	// Create Hubble client for global streaming (used only by FlowBroadcaster)
+	var hubbleClient *client.HubbleGRPCClient
+	hubbleClient, err = client.NewHubbleGRPCClientWithMetrics(config.Application.HubbleServer, sharedMetrics)
 	if err != nil {
-		logger.Warnf("Failed to create Hubble client for WebSocket: %v", err)
-		logger.Warnf("WebSocket flow streaming will not be available")
+		logger.Warnf("Failed to create Hubble client for WebSocket streaming: %v", err)
+		logger.Warn("WebSocket flow streaming will not be available")
 		hubbleClient = nil
 	} else {
-		// Test connection
+		// Test connection once
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		if err := hubbleClient.TestConnection(ctx); err != nil {
 			logger.Warnf("Hubble connection test failed: %v", err)
-			logger.Warnf("WebSocket flow streaming will not be available")
+			logger.Warn("WebSocket flow streaming will not be available")
 			hubbleClient.Close()
 			hubbleClient = nil
 		}
 		cancel()
 	}
 
-	// Create handlers
-	h := handlers.NewHandlers(store, config, logger, hubbleClient)
+	// Initialize flow broadcaster (single gRPC stream for all WebSocket clients)
+	// FlowBroadcaster sẽ giữ hubbleClient và tự quản lý vòng đời stream.
+	handlers.InitFlowBroadcaster(hubbleClient, store, config, logger, sharedMetrics)
+
+	// Create HTTP handlers (Handlers KHÔNG giữ hubbleClient nữa)
+	h := handlers.NewHandlers(store, config, logger)
 
 	// Setup router
 	router := mux.NewRouter()
@@ -73,19 +77,18 @@ func main() {
 	// API routes
 	api := router.PathPrefix("/api/v1").Subrouter()
 
-	// Flows endpoints (specific routes must come before parameterized routes)
+	// Flows endpoints
 	api.HandleFunc("/flows/stats", h.GetFlowStats).Methods("GET")
 	api.HandleFunc("/stream/flows", h.StreamFlows).Methods("GET")
 	api.HandleFunc("/flows", h.GetFlows).Methods("GET")
-	api.HandleFunc("/flows/{id}", h.GetFlow).Methods("GET")
 
-	// Alerts endpoints (specific routes must come before parameterized routes)
+	// Alerts endpoints
 	api.HandleFunc("/alerts/timeline", h.GetAlertsTimeline).Methods("GET")
 	api.HandleFunc("/stream/alerts", h.StreamAlerts).Methods("GET")
 	api.HandleFunc("/alerts", h.GetAlerts).Methods("GET")
 	api.HandleFunc("/alerts/{id}", h.GetAlert).Methods("GET")
 
-	// Rules endpoints (specific routes must come before parameterized routes)
+	// Rules endpoints
 	api.HandleFunc("/rules/stats", h.GetRulesStats).Methods("GET")
 	api.HandleFunc("/rules", h.GetRules).Methods("GET")
 	api.HandleFunc("/rules/{id}", h.GetRule).Methods("GET")
@@ -97,24 +100,20 @@ func main() {
 	// Health check
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	}).Methods("GET", "OPTIONS")
 
 	// Start background task to sync rules from config
 	go syncRulesFromConfig(store, config, logger)
 
-	// Start background task to stream flows from Hubble
-	go streamFlowsFromHubble(store, config, logger, sharedMetrics)
-
 	// Start server
 	addr := fmt.Sprintf(":%s", *port)
 	srv := &http.Server{
-		Addr:         addr,
-		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
-		// Disable timeouts for WebSocket connections
+		Addr:              addr,
+		Handler:           router,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 		ReadHeaderTimeout: 15 * time.Second,
 	}
 
@@ -142,7 +141,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
 
-		// Allow specific origins for development
 		allowedOrigins := []string{
 			"http://localhost:5000",
 			"http://localhost:3000",
@@ -150,7 +148,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 			"http://127.0.0.1:3000",
 		}
 
-		// If origin is in allowed list, use it; otherwise use *
 		allowOrigin := "*"
 		if origin != "" {
 			for _, allowed := range allowedOrigins {
@@ -166,12 +163,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
 		w.Header().Set("Access-Control-Max-Age", "3600")
 
-		// Only set credentials if using specific origin
 		if allowOrigin != "*" {
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
-		// Handle preflight requests
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -201,121 +196,4 @@ func syncRulesFromConfig(store *storage.Storage, config *utils.AnomalyDetectionC
 		store.SetRules(rules)
 		logger.Debugf("Synced %d rules from config", len(rules))
 	}
-}
-
-func streamFlowsFromHubble(store *storage.Storage, config *utils.AnomalyDetectionConfig, logger *logrus.Logger, sharedMetrics *client.PrometheusMetrics) {
-	// Create Hubble client with shared metrics to avoid duplicate registration
-	hubbleClient, err := client.NewHubbleGRPCClientWithMetrics(config.Application.HubbleServer, sharedMetrics)
-	if err != nil {
-		logger.Errorf("Failed to create Hubble client: %v", err)
-		return
-	}
-	defer hubbleClient.Close()
-
-	// Test connection
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := hubbleClient.TestConnection(ctx); err != nil {
-		logger.Warnf("Hubble connection test failed: %v", err)
-		logger.Warnf("Flow streaming will not be available")
-		cancel()
-		return
-	}
-	cancel()
-
-	// Get namespaces to monitor
-	var namespaces []string
-	if len(config.Namespaces) > 0 {
-		namespaces = config.Namespaces
-	} else if config.Application.DefaultNamespace != "" {
-		namespaces = []string{config.Application.DefaultNamespace}
-	}
-
-	logger.Infof("Starting to stream flows from Hubble (namespaces: %v)", namespaces)
-
-	// Stream flows
-	streamCtx, streamCancel := context.WithCancel(context.Background())
-	defer streamCancel()
-
-	err = hubbleClient.StreamFlowsWithMetricsOnly(streamCtx, namespaces, func(ns string) {
-		// Flow counter callback (optional)
-	}, func(flow *model.Flow) {
-		// Convert and store flow
-		sf := convertModelFlowToStorageFlow(flow)
-		store.AddFlow(sf)
-		logger.Debugf("Stored flow: %s -> %s", sf.SourceIP, sf.DestinationIP)
-	})
-
-	if err != nil && err != context.Canceled {
-		logger.Errorf("Flow streaming error: %v", err)
-	}
-}
-
-// Helper function to convert model.Flow to storage.Flow
-func convertModelFlowToStorageFlow(mf *model.Flow) storage.Flow {
-	sf := storage.Flow{
-		Timestamp: time.Now(),
-		Verdict:   mf.Verdict.String(),
-	}
-
-	if mf.Time != nil {
-		sf.Timestamp = *mf.Time
-	}
-
-	// Source endpoint
-	if mf.Source != nil {
-		sf.Source = &storage.Endpoint{
-			Name:      mf.Source.PodName,
-			Namespace: mf.Source.Namespace,
-			Identity:  mf.Source.Namespace + "/" + mf.Source.PodName,
-		}
-		sf.Namespace = mf.Source.Namespace
-	}
-
-	// Destination endpoint
-	if mf.Destination != nil {
-		sf.Destination = &storage.Endpoint{
-			Name:      mf.Destination.PodName,
-			Namespace: mf.Destination.Namespace,
-			Identity:  mf.Destination.Namespace + "/" + mf.Destination.PodName,
-		}
-		if sf.Namespace == "" {
-			sf.Namespace = mf.Destination.Namespace
-		}
-	}
-
-	// IP addresses
-	if mf.IP != nil {
-		sf.SourceIP = mf.IP.Source
-		sf.DestinationIP = mf.IP.Destination
-	}
-
-	// Ports and L4 info
-	if mf.L4 != nil {
-		if mf.L4.TCP != nil {
-			sf.DestinationPort = mf.L4.TCP.DestinationPort
-			if mf.L4.TCP.Flags != nil {
-				sf.TCPFlags = mf.L4.TCP.Flags.String()
-			}
-		} else if mf.L4.UDP != nil {
-			sf.DestinationPort = mf.L4.UDP.DestinationPort
-		}
-	}
-
-	// L7 info
-	if mf.L7 != nil {
-		sf.L7Info = mf.L7.Type.String()
-	}
-
-	// Traffic direction - determine from source/destination
-	if mf.Source != nil && mf.Source.Namespace != "" {
-		if mf.Destination != nil && mf.Destination.Namespace == "" {
-			sf.TrafficDirection = "egress"
-		} else if mf.Destination != nil && mf.Destination.Namespace != "" {
-			sf.TrafficDirection = "egress" // Default assumption
-		}
-	} else if mf.Destination != nil && mf.Destination.Namespace != "" {
-		sf.TrafficDirection = "ingress"
-	}
-
-	return sf
 }

@@ -3,6 +3,7 @@ import { create } from 'zustand'
 const useStore = create((set) => ({
   // Flows state
   flows: [],
+  totalFlows: 0,
   flowsLoading: false,
   flowsError: null,
   
@@ -22,6 +23,7 @@ const useStore = create((set) => ({
   
   // Actions
   setFlows: (flows) => set({ flows }),
+  setTotalFlows: (total) => set({ totalFlows: total }),
   setFlowsLoading: (loading) => set({ flowsLoading: loading }),
   setFlowsError: (error) => set({ flowsError: error }),
   

@@ -479,11 +479,24 @@ func (c *HubbleGRPCClient) convertHubbleFlow(hubbleFlow *observer.Flow) *model.F
 		flow.Verdict = model.Verdict_VERDICT_UNKNOWN
 	}
 
+	// Extract IP addresses
+	// GetSource() and GetDestination() should return string directly
 	if hubbleFlow.GetIP() != nil {
-		flow.IP = &model.IP{
-			Source:      hubbleFlow.GetIP().GetSource(),
-			Destination: hubbleFlow.GetIP().GetDestination(),
+		sourceIP := hubbleFlow.GetIP().GetSource()
+		destIP := hubbleFlow.GetIP().GetDestination()
+
+		// Debug: log if IP is empty
+		if sourceIP == "" || destIP == "" {
+			fmt.Printf("DEBUG: IP extraction - SourceIP: '%s', DestIP: '%s'\n", sourceIP, destIP)
 		}
+
+		// Always set IP (even if empty, to help with debugging)
+		flow.IP = &model.IP{
+			Source:      sourceIP,
+			Destination: destIP,
+		}
+	} else {
+		fmt.Printf("DEBUG: hubbleFlow.GetIP() is nil\n")
 	}
 
 	if hubbleFlow.GetL4() != nil {

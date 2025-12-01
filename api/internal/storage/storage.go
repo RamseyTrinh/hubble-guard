@@ -46,7 +46,6 @@ type Flow struct {
 	SourceIP         string    `json:"source_ip,omitempty"`
 	DestinationIP    string    `json:"destination_ip,omitempty"`
 	DestinationPort  uint32    `json:"destination_port,omitempty"`
-	L7Info           string    `json:"l7_info,omitempty"`
 	TrafficDirection string    `json:"traffic_direction,omitempty"` // egress, ingress
 	TCPFlags         string    `json:"tcp_flags,omitempty"`
 }

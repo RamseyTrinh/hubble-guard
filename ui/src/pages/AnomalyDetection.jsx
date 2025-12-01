@@ -45,7 +45,7 @@ export default function AnomalyDetection() {
   useEffect(() => {
     loadAlerts()
     setupWebSocket()
-    const interval = setInterval(loadAlerts, 10000) // Refresh every 10 seconds
+    const interval = setInterval(loadAlerts, 10000)
     return () => clearInterval(interval)
   }, [])
 
