@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	prommodel "github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
 )
 
@@ -158,17 +161,19 @@ func (fb *FlowBroadcaster) RemoveClient(conn *websocket.Conn) {
 }
 
 type Handlers struct {
-	store    *storage.Storage
-	config   *utils.AnomalyDetectionConfig
-	logger   *logrus.Logger
-	upgrader websocket.Upgrader
+	store      *storage.Storage
+	config     *utils.AnomalyDetectionConfig
+	logger     *logrus.Logger
+	upgrader   websocket.Upgrader
+	promClient *client.PrometheusClient
 }
 
-func NewHandlers(store *storage.Storage, config *utils.AnomalyDetectionConfig, logger *logrus.Logger) *Handlers {
+func NewHandlers(store *storage.Storage, config *utils.AnomalyDetectionConfig, logger *logrus.Logger, promClient *client.PrometheusClient) *Handlers {
 	return &Handlers{
-		store:  store,
-		config: config,
-		logger: logger,
+		store:      store,
+		config:     config,
+		logger:     logger,
+		promClient: promClient,
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
@@ -452,17 +457,430 @@ func (h *Handlers) GetRulesStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, h.store.GetRulesStats())
 }
 
-func (h *Handlers) GetMetricsStats(w http.ResponseWriter, r *http.Request) {
-	fs := h.store.GetFlowStats()
-	ac := len(h.store.GetAlerts(1000, "", "", ""))
-	rs := h.store.GetRulesStats()
-	cr := len(h.store.GetAlerts(1000, "CRITICAL", "", ""))
+func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
+	if h.promClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "Prometheus client not available")
+		return
+	}
+
+	ctx := r.Context()
+	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
+
+	response := map[string]interface{}{
+		"totalFlows":     float64(0),
+		"totalAlerts":    float64(0),
+		"criticalAlerts": float64(0),
+		"tcpConnections": float64(0),
+	}
+	errors := make(map[string]string)
+
+	// Query total flows - try sum() first, fallback to direct query
+	query := "sum(hubble_flows_total)"
+	h.logger.Debugf("Querying Prometheus: %s", query)
+	if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
+		var totalFlowsValue float64
+		found := false
+
+		// Handle Vector result
+		if vector, ok := result.(prommodel.Vector); ok {
+			if len(vector) > 0 {
+				totalFlowsValue = float64(vector[0].Value)
+				found = true
+				h.logger.Debugf("Total flows result (Vector): %v", vector[0].Value)
+			}
+		} else if scalar, ok := result.(*prommodel.Scalar); ok {
+			// Handle Scalar result
+			totalFlowsValue = float64(scalar.Value)
+			found = true
+			h.logger.Debugf("Total flows result (Scalar): %v", scalar.Value)
+		}
+
+		if found {
+			response["totalFlows"] = totalFlowsValue
+		} else {
+			// Fallback: try direct query without sum
+			h.logger.Debugf("Query '%s' returned empty, trying direct query", query)
+			directQuery := "hubble_flows_total"
+			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
+				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
+					// Sum manually
+					var sum float64
+					for _, sample := range directVector {
+						sum += float64(sample.Value)
+					}
+					response["totalFlows"] = sum
+					h.logger.Debugf("Total flows (summed from direct query): %v", sum)
+				} else {
+					h.logger.Debugf("Direct query '%s' also returned empty", directQuery)
+					errors["totalFlows"] = "No data returned"
+				}
+			} else {
+				h.logger.Warnf("Direct query '%s' failed: %v", directQuery, directErr)
+				errors["totalFlows"] = "No data returned"
+			}
+		}
+	} else {
+		h.logger.Errorf("Failed to query '%s': %v", query, err)
+		errors["totalFlows"] = err.Error()
+	}
+
+	// Query total alerts
+	query = "sum(hubble_guard_alerts_total)"
+	h.logger.Debugf("Querying Prometheus: %s", query)
+	if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
+		var totalAlertsValue float64
+		found := false
+
+		if vector, ok := result.(prommodel.Vector); ok {
+			if len(vector) > 0 {
+				totalAlertsValue = float64(vector[0].Value)
+				found = true
+				h.logger.Debugf("Total alerts result: %v", vector[0].Value)
+			}
+		} else if scalar, ok := result.(*prommodel.Scalar); ok {
+			totalAlertsValue = float64(scalar.Value)
+			found = true
+			h.logger.Debugf("Total alerts result (Scalar): %v", scalar.Value)
+		}
+
+		if found {
+			response["totalAlerts"] = totalAlertsValue
+		} else {
+			// Fallback: try direct query
+			directQuery := "hubble_guard_alerts_total"
+			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
+				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
+					var sum float64
+					for _, sample := range directVector {
+						sum += float64(sample.Value)
+					}
+					response["totalAlerts"] = sum
+					h.logger.Debugf("Total alerts (summed): %v", sum)
+				} else {
+					errors["totalAlerts"] = "No data returned"
+				}
+			} else {
+				errors["totalAlerts"] = "No data returned"
+			}
+		}
+	} else {
+		h.logger.Errorf("Failed to query '%s': %v", query, err)
+		errors["totalAlerts"] = err.Error()
+	}
+
+	// Query critical alerts
+	query = `sum(hubble_guard_alerts_total{severity="CRITICAL"})`
+	h.logger.Debugf("Querying Prometheus: %s", query)
+	if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
+		var criticalAlertsValue float64
+		found := false
+
+		if vector, ok := result.(prommodel.Vector); ok {
+			if len(vector) > 0 {
+				criticalAlertsValue = float64(vector[0].Value)
+				found = true
+				h.logger.Debugf("Critical alerts result: %v", vector[0].Value)
+			}
+		} else if scalar, ok := result.(*prommodel.Scalar); ok {
+			criticalAlertsValue = float64(scalar.Value)
+			found = true
+			h.logger.Debugf("Critical alerts result (Scalar): %v", scalar.Value)
+		}
+
+		if found {
+			response["criticalAlerts"] = criticalAlertsValue
+		} else {
+			// Fallback: try direct query with filter
+			directQuery := `hubble_guard_alerts_total{severity="CRITICAL"}`
+			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
+				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
+					var sum float64
+					for _, sample := range directVector {
+						sum += float64(sample.Value)
+					}
+					response["criticalAlerts"] = sum
+					h.logger.Debugf("Critical alerts (summed): %v", sum)
+				} else {
+					errors["criticalAlerts"] = "No data returned"
+				}
+			} else {
+				errors["criticalAlerts"] = "No data returned"
+			}
+		}
+	} else {
+		h.logger.Errorf("Failed to query '%s': %v", query, err)
+		errors["criticalAlerts"] = err.Error()
+	}
+
+	// Query TCP connections total
+	query = "sum(hubble_tcp_connections_total)"
+	h.logger.Debugf("Querying Prometheus: %s", query)
+	if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
+		var tcpConnectionsValue float64
+		found := false
+
+		if vector, ok := result.(prommodel.Vector); ok {
+			if len(vector) > 0 {
+				tcpConnectionsValue = float64(vector[0].Value)
+				found = true
+				h.logger.Debugf("TCP connections result: %v", vector[0].Value)
+			}
+		} else if scalar, ok := result.(*prommodel.Scalar); ok {
+			tcpConnectionsValue = float64(scalar.Value)
+			found = true
+			h.logger.Debugf("TCP connections result (Scalar): %v", scalar.Value)
+		}
+
+		if found {
+			response["tcpConnections"] = tcpConnectionsValue
+		} else {
+			// Fallback: try direct query
+			directQuery := "hubble_tcp_connections_total"
+			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
+				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
+					var sum float64
+					for _, sample := range directVector {
+						sum += float64(sample.Value)
+					}
+					response["tcpConnections"] = sum
+					h.logger.Debugf("TCP connections (summed): %v", sum)
+				} else {
+					errors["tcpConnections"] = "No data returned"
+				}
+			} else {
+				errors["tcpConnections"] = "No data returned"
+			}
+		}
+	} else {
+		h.logger.Errorf("Failed to query '%s': %v", query, err)
+		errors["tcpConnections"] = err.Error()
+	}
+
+	// Include errors in response if any (for debugging)
+	if len(errors) > 0 {
+		response["_errors"] = errors
+	}
+
+	writeJSON(w, http.StatusOK, response)
+}
+
+func (h *Handlers) TestPrometheusConnection(w http.ResponseWriter, r *http.Request) {
+	if h.promClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "Prometheus client not available")
+		return
+	}
+
+	ctx := r.Context()
+	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
+
+	// Test basic query
+	testQueries := []string{
+		"hubble_flows_total",
+		"hubble_guard_alerts_total",
+		"hubble_tcp_connections_total",
+		"up", // Prometheus built-in metric to test connection
+	}
+
+	results := make(map[string]interface{})
+	for _, query := range testQueries {
+		h.logger.Infof("Testing query: %s", query)
+		if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
+			if vector, ok := result.(prommodel.Vector); ok {
+				results[query] = map[string]interface{}{
+					"status": "success",
+					"count":  len(vector),
+					"values": len(vector),
+				}
+				if len(vector) > 0 {
+					results[query].(map[string]interface{})["sample"] = map[string]interface{}{
+						"value":  float64(vector[0].Value),
+						"labels": vector[0].Metric,
+					}
+				}
+			} else {
+				results[query] = map[string]interface{}{
+					"status": "unexpected_type",
+					"type":   fmt.Sprintf("%T", result),
+				}
+			}
+		} else {
+			results[query] = map[string]interface{}{
+				"status": "error",
+				"error":  err.Error(),
+			}
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"totalFlows":     fs.TotalFlows,
-		"totalAlerts":    ac,
-		"activeRules":    rs.Enabled,
-		"criticalAlerts": cr,
+		"prometheus_url": h.config.Prometheus.URL,
+		"queries":        results,
+	})
+}
+
+func (h *Handlers) GetDroppedFlowsTimeSeries(w http.ResponseWriter, r *http.Request) {
+	if h.promClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "Prometheus client not available")
+		return
+	}
+
+	ctx := r.Context()
+	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
+
+	// Parse query parameters
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	stepStr := r.URL.Query().Get("step")
+
+	// Default: last 1 hour, 15 second steps
+	end := time.Now()
+	start := end.Add(-1 * time.Hour)
+	step := 15 * time.Second
+
+	if startStr != "" {
+		if parsed, err := time.Parse(time.RFC3339, startStr); err == nil {
+			start = parsed
+		}
+	}
+	if endStr != "" {
+		if parsed, err := time.Parse(time.RFC3339, endStr); err == nil {
+			end = parsed
+		}
+	}
+	if stepStr != "" {
+		if parsed, err := time.ParseDuration(stepStr); err == nil {
+			step = parsed
+		}
+	}
+
+	// Query dropped flows time-series
+	query := `sum(hubble_flows_by_verdict_total{verdict="DROPPED"}) by (namespace)`
+
+	// Use QueryRange for time-series data
+	rangeQuery := v1.Range{
+		Start: start,
+		End:   end,
+		Step:  step,
+	}
+
+	h.logger.Debugf("Querying Prometheus range: %s from %v to %v, step: %v", query, start, end, step)
+
+	result, err := h.promClient.QueryRange(ctx, query, rangeQuery, timeout)
+	if err != nil {
+		h.logger.Errorf("Failed to query dropped flows time-series: %v", err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query Prometheus: %v", err))
+		return
+	}
+
+	// Convert result to JSON format
+	timeSeriesData := []map[string]interface{}{}
+
+	if matrix, ok := result.(prommodel.Matrix); ok {
+		for _, series := range matrix {
+			// Get namespace label
+			namespace := "default"
+			if ns, exists := series.Metric["namespace"]; exists {
+				namespace = string(ns)
+			}
+
+			// Convert samples to time-series points
+			points := []map[string]interface{}{}
+			for _, sample := range series.Values {
+				points = append(points, map[string]interface{}{
+					"timestamp": sample.Timestamp.Unix(),
+					"value":     float64(sample.Value),
+				})
+			}
+
+			timeSeriesData = append(timeSeriesData, map[string]interface{}{
+				"namespace": namespace,
+				"metric":    series.Metric,
+				"values":    points,
+			})
+		}
+	} else {
+		h.logger.Warnf("Unexpected result type for time-series: %T", result)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"query": query,
+		"start": start.Unix(),
+		"end":   end.Unix(),
+		"step":  step.Seconds(),
+		"data":  timeSeriesData,
+	})
+}
+
+func (h *Handlers) GetAlertTypesStats(w http.ResponseWriter, r *http.Request) {
+	if h.promClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "Prometheus client not available")
+		return
+	}
+
+	ctx := r.Context()
+	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
+
+	// Query alert types - sum by type
+	query := `sum(hubble_guard_alerts_total) by (type)`
+	h.logger.Debugf("Querying Prometheus for alert types: %s", query)
+
+	result, err := h.promClient.Query(ctx, query, timeout)
+	if err != nil {
+		h.logger.Errorf("Failed to query alert types: %v", err)
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query Prometheus: %v", err))
+		return
+	}
+
+	// Convert result to JSON format
+	alertTypes := []map[string]interface{}{}
+
+	if vector, ok := result.(prommodel.Vector); ok {
+		for _, sample := range vector {
+			alertType := "unknown"
+			if typeVal, exists := sample.Metric["type"]; exists {
+				alertType = string(typeVal)
+			}
+
+			alertTypes = append(alertTypes, map[string]interface{}{
+				"type":  alertType,
+				"value": float64(sample.Value),
+			})
+		}
+	} else {
+		h.logger.Warnf("Unexpected result type for alert types: %T", result)
+	}
+
+	// Also query by severity for more details
+	severityQuery := `sum(hubble_guard_alerts_total) by (type, severity)`
+	h.logger.Debugf("Querying Prometheus for alert types by severity: %s", severityQuery)
+
+	severityResult, err := h.promClient.Query(ctx, severityQuery, timeout)
+	severityData := []map[string]interface{}{}
+
+	if err == nil {
+		if vector, ok := severityResult.(prommodel.Vector); ok {
+			for _, sample := range vector {
+				alertType := "unknown"
+				severity := "unknown"
+
+				if typeVal, exists := sample.Metric["type"]; exists {
+					alertType = string(typeVal)
+				}
+				if sevVal, exists := sample.Metric["severity"]; exists {
+					severity = string(sevVal)
+				}
+
+				severityData = append(severityData, map[string]interface{}{
+					"type":     alertType,
+					"severity": severity,
+					"value":    float64(sample.Value),
+				})
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"byType":     alertTypes,
+		"bySeverity": severityData,
 	})
 }
 

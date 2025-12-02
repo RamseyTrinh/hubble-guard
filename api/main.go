@@ -65,8 +65,19 @@ func main() {
 	// FlowBroadcaster sẽ giữ hubbleClient và tự quản lý vòng đời stream.
 	handlers.InitFlowBroadcaster(hubbleClient, store, config, logger, sharedMetrics)
 
+	// Create Prometheus client for metrics queries
+	var promClient *client.PrometheusClient
+	promClient, err = client.NewPrometheusClient(config.Prometheus.URL)
+	if err != nil {
+		logger.Warnf("Failed to create Prometheus client: %v", err)
+		logger.Warn("Prometheus metrics queries will not be available")
+		promClient = nil
+	} else {
+		logger.Infof("Prometheus client connected to %s", config.Prometheus.URL)
+	}
+
 	// Create HTTP handlers (Handlers KHÔNG giữ hubbleClient nữa)
-	h := handlers.NewHandlers(store, config, logger)
+	h := handlers.NewHandlers(store, config, logger, promClient)
 
 	// Setup router
 	router := mux.NewRouter()
@@ -95,7 +106,10 @@ func main() {
 	api.HandleFunc("/rules/{id}", h.UpdateRule).Methods("PUT")
 
 	// Metrics endpoints
-	api.HandleFunc("/metrics/stats", h.GetMetricsStats).Methods("GET")
+	api.HandleFunc("/metrics/prometheus/stats", h.GetPrometheusStats).Methods("GET")
+	api.HandleFunc("/metrics/prometheus/test", h.TestPrometheusConnection).Methods("GET")
+	api.HandleFunc("/metrics/prometheus/dropped-flows/timeseries", h.GetDroppedFlowsTimeSeries).Methods("GET")
+	api.HandleFunc("/metrics/prometheus/alert-types", h.GetAlertTypesStats).Methods("GET")
 
 	// Health check
 	router.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {

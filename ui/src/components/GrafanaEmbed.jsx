@@ -2,6 +2,24 @@ import { useState, useEffect } from 'react'
 import { Box, Paper, Typography, Alert, CircularProgress, IconButton } from '@mui/material'
 import { Refresh, OpenInNew } from '@mui/icons-material'
 
+// Grafana Logo Image Component
+const GrafanaIcon = ({ sx }) => (
+  <Box
+    component="img"
+    src="https://grafana.com/static/img/menu/grafana2.svg"
+    alt="Grafana"
+    sx={{
+      width: 24,
+      height: 24,
+      ...sx,
+    }}
+    onError={(e) => {
+      // Fallback to a simple colored box if image fails to load
+      e.target.style.display = 'none'
+    }}
+  />
+)
+
 const GRAFANA_URL = import.meta.env.VITE_GRAFANA_URL || 'http://localhost:3000'
 const USE_PROXY = import.meta.env.VITE_GRAFANA_USE_PROXY === 'true' // Default to false - use direct URL
 const GRAFANA_USER = import.meta.env.VITE_GRAFANA_USER || 'admin'
@@ -26,13 +44,22 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
 
     let url = `${baseUrl}/d/${dashboardUid}`
     
+    // Build query parameters
+    const params = new URLSearchParams()
+    
     if (panelId) {
-      url += `?viewPanel=${panelId}`
-    } else {
-      url += '?kiosk=tv'
+      params.append('viewPanel', panelId)
     }
-
-    url += `&from=now-1h&to=now&refresh=30s`
+    
+    // Always enable kiosk mode for cleaner display
+    params.append('kiosk', 'tv')
+    
+    // Add time range and refresh
+    params.append('from', 'now-1h')
+    params.append('to', 'now')
+    params.append('refresh', '30s')
+    
+    url += `?${params.toString()}`
 
     return url
   }
@@ -85,9 +112,12 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
   return (
     <Paper sx={{ p: 2, position: 'relative' }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-        <Typography variant="h6">
-          {title || 'Grafana Dashboard'}
-        </Typography>
+        <Box display="flex" alignItems="center">
+          <GrafanaIcon sx={{ mr: 1 }} />
+          <Typography variant="h6" color="text.secondary">
+            {title || 'Grafana Dashboard'}
+          </Typography>
+        </Box>
         <Box>
           <IconButton size="small" onClick={handleRefresh} title="Refresh">
             <Refresh />

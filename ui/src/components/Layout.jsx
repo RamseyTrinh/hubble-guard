@@ -81,7 +81,7 @@ export default function Layout({ children }) {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap component="div">
-            Hubble Anomaly Detector
+            Hubble Guard Monitoring
           </Typography>
         </Toolbar>
       </AppBar>

@@ -110,10 +110,8 @@ export default function FlowViewer() {
     }
   };
 
-  // ----------------- Table Pagination -----------------
   const handleChangePage = (_, newPage) => setPage(newPage);
 
-  // ----------------- CSV Export -----------------
   const handleExport = () => {
     if (!Array.isArray(flows)) return;
 
@@ -164,21 +162,37 @@ export default function FlowViewer() {
     a.click();
   };
 
-  const verdictColors = {
-    FORWARDED: "success",
-    DROPPED: "error",
-    ERROR: "warning",
+  const getVerdictChipProps = (verdict) => {
+    const colors = {
+      FORWARDED: {
+        bgcolor: '#1B5E20',
+        color: '#C8E6C9',
+      },
+      DROPPED: {
+        bgcolor: '#6A1B1A',
+        color: '#FFCDD2',
+      },
+      TRACED: {
+        bgcolor: '#0D47A1',
+        color: '#BBDEFB',
+      },
+      TRANSLATED: {
+        bgcolor: '#8C6D1F',
+        color: '#FFE082',
+      },
+    };
+    return colors[verdict] || { bgcolor: 'transparent', color: '#E0E0E0' };
   };
 
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" mb={3}>
-        <Typography variant="h4">Flow Viewer</Typography>
+        <Typography variant="h5">Flow Viewer</Typography>
         <Box>
           <Button
             startIcon={<Download />}
             onClick={handleExport}
-            variant="outlined"
+            variant="contained"
             sx={{ mr: 1 }}
           >
             Export
@@ -191,7 +205,6 @@ export default function FlowViewer() {
 
       {flowsError && <Alert severity="error">{flowsError}</Alert>}
 
-      {/* ----------------- Filters ----------------- */}
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box display="flex" gap={2} flexWrap="wrap">
           <TextField
@@ -245,9 +258,7 @@ export default function FlowViewer() {
         </Box>
       </Paper>
 
-      {/* ----------------- Table ----------------- */}
       {isInitialLoad && flows.length === 0 ? (
-        // Initial load: show skeleton
         <TableContainer component={Paper}>
           <Table size="small" stickyHeader>
             <TableHead>
@@ -286,7 +297,8 @@ export default function FlowViewer() {
               sx={{ 
                 position: 'relative',
                 opacity: flowsLoading ? 0.6 : 1,
-                transition: 'opacity 0.3s ease-in-out'
+                transition: 'opacity 0.3s ease-in-out',
+                backgroundColor: '#1E2023',
               }}
             >
               <Table size="small" stickyHeader>
@@ -322,31 +334,57 @@ export default function FlowViewer() {
                       const destinationIP = f.destination_ip || f.destinationIP || "-";
                       const destinationPort = f.destination_port || f.destinationPort || "-";
                       
+                      const verdictProps = getVerdictChipProps(f.verdict);
+                      
                       return (
                         <TableRow key={f.id || idx} hover>
-                          <TableCell>{f.source?.name || "-"}</TableCell>
-                          <TableCell>{sourceIP}</TableCell>
-                          <TableCell>{f.source?.identity || "-"}</TableCell>
-                          <TableCell>{f.destination?.name || "-"}</TableCell>
-                          <TableCell>{destinationIP}</TableCell>
-                          <TableCell>{f.destination?.identity || "-"}</TableCell>
-                          <TableCell>{destinationPort}</TableCell>
+                          <TableCell sx={{ color: '#F5F5F5' }}>
+                            {f.source?.name || "-"}
+                          </TableCell>
+                          <TableCell sx={{ color: '#C0C0C0' }}>
+                            {sourceIP}
+                          </TableCell>
+                          <TableCell sx={{ color: '#9EC5FF' }}>
+                            {f.source?.identity || "-"}
+                          </TableCell>
+                          <TableCell sx={{ color: '#F5F5F5' }}>
+                            {f.destination?.name || "-"}
+                          </TableCell>
+                          <TableCell sx={{ color: '#C0C0C0' }}>
+                            {destinationIP}
+                          </TableCell>
+                          <TableCell sx={{ color: '#9EC5FF' }}>
+                            {f.destination?.identity || "-"}
+                          </TableCell>
+                          <TableCell sx={{ color: '#E0E0E0' }}>
+                            {destinationPort}
+                          </TableCell>
                           <TableCell>
                             <Chip
                               label={f.traffic_direction || "-"}
                               size="small"
                               variant="outlined"
+                              sx={{ 
+                                borderColor: '#6E6E6E',
+                                color: '#A8A8A8',
+                              }}
                             />
                           </TableCell>
                           <TableCell>
                             <Chip
                               label={f.verdict || "-"}
-                              color={verdictColors[f.verdict] || "default"}
                               size="small"
+                              sx={{
+                                bgcolor: verdictProps.bgcolor,
+                                color: verdictProps.color,
+                                fontWeight: 500,
+                              }}
                             />
                           </TableCell>
-                          <TableCell>{f.tcp_flags || "-"}</TableCell>
-                          <TableCell>
+                          <TableCell sx={{ color: '#E0E0E0' }}>
+                            {f.tcp_flags || "-"}
+                          </TableCell>
+                          <TableCell sx={{ color: '#A8A8A8' }}>
                             {f.timestamp
                               ? format(new Date(f.timestamp), "yyyy/MM/dd HH:mm:ss")
                               : "-"}
@@ -368,7 +406,7 @@ export default function FlowViewer() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
                     zIndex: 1,
                   }}
                 >
