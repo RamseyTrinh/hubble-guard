@@ -2,6 +2,9 @@ package client
 
 import (
 	"fmt"
+	"strings"
+	"sync"
+	"time"
 
 	"hubble-anomaly-detector/internal/model"
 
@@ -9,7 +12,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-// PrometheusMetrics chứa tất cả các metrics được expose
 type PrometheusMetrics struct {
 	// Flow metrics
 	FlowTotal         *prometheus.CounterVec
@@ -47,12 +49,98 @@ type PrometheusMetrics struct {
 	ErrorResponseRate      *prometheus.CounterVec
 	TCPResetRate           *prometheus.CounterVec
 	TCPDropRate            *prometheus.CounterVec
+	PortScanDistinctPorts  *prometheus.GaugeVec
+	NamespaceAccess        *prometheus.CounterVec // Cross-namespace access tracking
+	SuspiciousOutbound     *prometheus.CounterVec // Suspicious outbound connections tracking
+
+	// Alert metrics
+	AlertCounter *prometheus.CounterVec // Total alerts detected
+
+	// Port scan tracking
+	portScanTracker *portScanTracker
 }
 
-// NewPrometheusMetrics tạo instance mới của PrometheusMetrics
+type portScanEntry struct {
+	ports map[uint16]time.Time
+}
+
+type portScanTracker struct {
+	entries map[string]*portScanEntry
+	mu      sync.RWMutex
+	window  time.Duration
+	// Track which metrics need to be updated
+	metricKeys map[string]string // key -> "sourceIP:destIP:namespace"
+}
+
+func newPortScanTracker() *portScanTracker {
+	return &portScanTracker{
+		entries:    make(map[string]*portScanEntry),
+		metricKeys: make(map[string]string),
+		window:     10 * time.Second,
+	}
+}
+
+func (pst *portScanTracker) addPort(sourceIP, destIP string, port uint16) {
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+	now := time.Now()
+
+	pst.mu.Lock()
+	defer pst.mu.Unlock()
+
+	entry, exists := pst.entries[key]
+	if !exists {
+		entry = &portScanEntry{
+			ports: make(map[uint16]time.Time),
+		}
+		pst.entries[key] = entry
+	}
+
+	// Always update timestamp for this port (even if it already exists)
+	// This ensures the port stays in the window if it's accessed again
+	entry.ports[port] = now
+
+	// Don't cleanup here - let getDistinctPortCount handle cleanup
+	// This ensures all ports added in quick succession are counted correctly
+}
+
+func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+	now := time.Now()
+
+	pst.mu.Lock()
+	defer pst.mu.Unlock()
+
+	entry, exists := pst.entries[key]
+	if !exists {
+		return 0
+	}
+
+	// Count ports within window and cleanup old ones
+	count := 0
+	portsToDelete := []uint16{}
+	for port, timestamp := range entry.ports {
+		if now.Sub(timestamp) <= pst.window {
+			count++
+		} else {
+			portsToDelete = append(portsToDelete, port)
+		}
+	}
+
+	// Cleanup old ports
+	for _, port := range portsToDelete {
+		delete(entry.ports, port)
+	}
+
+	// Delete entry if no ports left
+	if len(entry.ports) == 0 {
+		delete(pst.entries, key)
+	}
+
+	return count
+}
+
 func NewPrometheusMetrics() *PrometheusMetrics {
 	return &PrometheusMetrics{
-		// Flow metrics
 		FlowTotal: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_flows_total",
@@ -101,7 +189,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"destination_ip", "destination_port", "namespace"},
 		),
 
-		// TCP metrics
 		TCPConnections: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_tcp_connections_total",
@@ -126,7 +213,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "direction"},
 		),
 
-		// UDP metrics
 		UDPPackets: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_udp_packets_total",
@@ -143,7 +229,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "direction"},
 		),
 
-		// L7 metrics
 		L7Requests: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_l7_requests_total",
@@ -160,7 +245,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"l7_type", "namespace"},
 		),
 
-		// Error metrics
 		FlowErrors: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_flow_errors_total",
@@ -177,7 +261,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"error_type"},
 		),
 
-		// Performance metrics
 		FlowProcessingTime: promauto.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "hubble_flow_processing_duration_seconds",
@@ -195,7 +278,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "protocol"},
 		),
 
-		// Anomaly detection metrics
 		BaselineTrafficRate: promauto.NewGaugeVec(
 			prometheus.GaugeOpts{
 				Name: "hubble_baseline_traffic_rate",
@@ -243,10 +325,44 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			},
 			[]string{"namespace", "source_ip", "destination_ip"},
 		),
+
+		PortScanDistinctPorts: promauto.NewGaugeVec(
+			prometheus.GaugeOpts{
+				Name: "portscan_distinct_ports_10s",
+				Help: "Number of distinct destination ports in the last 10 seconds per source-dest pair",
+			},
+			[]string{"source_ip", "dest_ip", "namespace"},
+		),
+
+		NamespaceAccess: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hubble_namespace_access_total",
+				Help: "Total number of cross-namespace access attempts",
+			},
+			[]string{"source_namespace", "dest_namespace", "dest_service", "dest_pod"},
+		),
+
+		SuspiciousOutbound: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hubble_suspicious_outbound_total",
+				Help: "Total number of suspicious outbound connections to suspicious ports",
+			},
+			[]string{"namespace", "destination_port"},
+		),
+
+		AlertCounter: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "hubble_guard_alerts_total",
+				Help: "Total alerts detected",
+			},
+			[]string{"namespace", "severity", "type"},
+		),
+
+		portScanTracker: newPortScanTracker(),
 	}
 }
 
-// RecordFlow ghi lại metrics cho một flow
+// Record metrics cho một flow
 func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	if flow == nil {
 		return
@@ -360,54 +476,171 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	if flow.Verdict == model.Verdict_ERROR {
 		m.FlowErrors.WithLabelValues("verdict_error", namespace).Inc()
 	}
+
+	// Namespace access tracking - track cross-namespace access
+	if flow.Source != nil && flow.Destination != nil {
+		sourceNS := flow.Source.Namespace
+		destNS := flow.Destination.Namespace
+		if sourceNS != "" && destNS != "" && sourceNS != destNS {
+			destService := flow.Destination.ServiceName
+			if destService == "" {
+				destService = "unknown"
+			}
+			destPod := flow.Destination.PodName
+			if destPod == "" {
+				destPod = "unknown"
+			}
+			m.NamespaceAccess.WithLabelValues(sourceNS, destNS, destService, destPod).Inc()
+		}
+	}
+
+	// Suspicious outbound tracking - track connections to suspicious ports
+	if flow.L4 != nil {
+		var destPort int
+		if flow.L4.TCP != nil {
+			destPort = int(flow.L4.TCP.DestinationPort)
+		} else if flow.L4.UDP != nil {
+			destPort = int(flow.L4.UDP.DestinationPort)
+		}
+
+		// Check if port is suspicious
+		suspiciousPorts := map[int]bool{
+			22:   false, // SSH - may be suspicious depending on context
+			23:   true,  // Telnet - suspicious
+			135:  true,  // RPC - suspicious
+			445:  true,  // SMB - suspicious
+			1433: true,  // SQL Server - suspicious
+			3306: true,  // MySQL - suspicious
+			5432: true,  // PostgreSQL - suspicious
+		}
+
+		if suspiciousPorts[destPort] {
+			namespace := "unknown"
+			if flow.Source != nil && flow.Source.Namespace != "" {
+				namespace = flow.Source.Namespace
+			} else if flow.Destination != nil && flow.Destination.Namespace != "" {
+				namespace = flow.Destination.Namespace
+			}
+			m.SuspiciousOutbound.WithLabelValues(namespace, fmt.Sprintf("%d", destPort)).Inc()
+		}
+	}
 }
 
-// RecordError ghi lại lỗi
 func (m *PrometheusMetrics) RecordError(errorType, namespace string) {
 	m.FlowErrors.WithLabelValues(errorType, namespace).Inc()
 }
 
-// RecordConnectionError ghi lại lỗi kết nối
 func (m *PrometheusMetrics) RecordConnectionError(errorType string) {
 	m.ConnectionErrors.WithLabelValues(errorType).Inc()
 }
 
-// RecordProcessingTime ghi lại thời gian xử lý
 func (m *PrometheusMetrics) RecordProcessingTime(namespace string, duration float64) {
 	m.FlowProcessingTime.WithLabelValues(namespace).Observe(duration)
 }
 
-// UpdateActiveConnections cập nhật số lượng kết nối đang hoạt động
 func (m *PrometheusMetrics) UpdateActiveConnections(namespace, protocol string, count float64) {
 	m.ActiveConnections.WithLabelValues(namespace, protocol).Set(count)
 }
 
-// UpdateBaselineTrafficRate cập nhật baseline traffic rate
 func (m *PrometheusMetrics) UpdateBaselineTrafficRate(namespace string, rate float64) {
 	m.BaselineTrafficRate.WithLabelValues(namespace).Set(rate)
 }
 
-// UpdateTrafficSpikeMultiplier cập nhật traffic spike multiplier
 func (m *PrometheusMetrics) UpdateTrafficSpikeMultiplier(namespace string, multiplier float64) {
 	m.TrafficSpikeMultiplier.WithLabelValues(namespace).Set(multiplier)
 }
 
-// RecordNewDestination ghi lại kết nối đến destination mới
 func (m *PrometheusMetrics) RecordNewDestination(sourceIP, destIP, namespace string) {
 	m.NewDestinations.WithLabelValues(sourceIP, destIP, namespace).Inc()
 }
 
-// RecordErrorResponse ghi lại error response
 func (m *PrometheusMetrics) RecordErrorResponse(namespace, errorType string) {
 	m.ErrorResponseRate.WithLabelValues(namespace, errorType).Inc()
 }
 
-// RecordTCPReset ghi lại TCP reset
 func (m *PrometheusMetrics) RecordTCPReset(namespace, sourceIP, destIP string) {
 	m.TCPResetRate.WithLabelValues(namespace, sourceIP, destIP).Inc()
 }
 
-// RecordTCPDrop ghi lại TCP drop
 func (m *PrometheusMetrics) RecordTCPDrop(namespace, sourceIP, destIP string) {
 	m.TCPDropRate.WithLabelValues(namespace, sourceIP, destIP).Inc()
+}
+
+func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP, namespace string, port uint16) {
+	if m.portScanTracker == nil {
+		return
+	}
+
+	m.portScanTracker.addPort(sourceIP, destIP, port)
+
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+	m.portScanTracker.mu.Lock()
+	m.portScanTracker.metricKeys[key] = fmt.Sprintf("%s:%s:%s", sourceIP, destIP, namespace)
+	m.portScanTracker.mu.Unlock()
+
+	count := m.portScanTracker.getDistinctPortCount(sourceIP, destIP)
+
+	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
+}
+
+// CleanupPortScanMetrics periodically cleans up old port scan metrics
+func (m *PrometheusMetrics) CleanupPortScanMetrics() {
+	if m.portScanTracker == nil {
+		return
+	}
+
+	m.portScanTracker.mu.Lock()
+	defer m.portScanTracker.mu.Unlock()
+
+	now := time.Now()
+	keysToDelete := []string{}
+
+	for key, entry := range m.portScanTracker.entries {
+		for port, timestamp := range entry.ports {
+			if now.Sub(timestamp) > m.portScanTracker.window {
+				delete(entry.ports, port)
+			}
+		}
+
+		count := 0
+		for _, timestamp := range entry.ports {
+			if now.Sub(timestamp) <= m.portScanTracker.window {
+				count++
+			}
+		}
+
+		if metricKey, exists := m.portScanTracker.metricKeys[key]; exists {
+			parts := strings.Split(metricKey, ":")
+			if len(parts) == 3 {
+				sourceIP, destIP, namespace := parts[0], parts[1], parts[2]
+				if count == 0 {
+					m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(0)
+					keysToDelete = append(keysToDelete, key)
+				} else {
+					m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
+				}
+			}
+		}
+
+		if len(entry.ports) == 0 {
+			delete(m.portScanTracker.entries, key)
+		}
+	}
+
+	for _, key := range keysToDelete {
+		delete(m.portScanTracker.metricKeys, key)
+	}
+}
+
+func (m *PrometheusMetrics) RecordAlert(namespace, severity, alertType string) {
+	if namespace == "" {
+		namespace = "unknown"
+	}
+	if severity == "" {
+		severity = "unknown"
+	}
+	if alertType == "" {
+		alertType = "unknown"
+	}
+	m.AlertCounter.WithLabelValues(namespace, severity, alertType).Inc()
 }

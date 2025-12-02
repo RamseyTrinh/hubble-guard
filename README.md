@@ -1,5 +1,7 @@
 # Hubble Anomaly Detector
 
+Network flow anomaly detection system using Hubble and Prometheus.
+
 Một công cụ phát hiện bất thường mạng dựa trên dữ liệu flow từ Hubble, sử dụng rule-based detection để cảnh báo về các hoạt động đáng ngờ.
 
 ## Tính năng
@@ -123,7 +125,7 @@ func evaluateAllRules() {
     for _, window := range windows {
         totalRequests += window.Count
     }
-    // Hiển thị: "📊 Status: X total requests in last 60s - Normal"
+    // Hiển thị: " Status: X total requests in last 60s - Normal"
 }
 ```
 
@@ -146,7 +148,7 @@ Time Windows → Rule Engine → 4 Detection Rules
      ↓
 Metrics Calculation → Threshold Check → Alert Generation
      ↓
-Status Display: "📊 Status: X requests - Normal"
+Status Display: " Status: X requests - Normal"
 Alert Display: " [time] CRITICAL DDoS Attack Detected"
 ```
 
@@ -206,16 +208,16 @@ Alert Display: " [time] CRITICAL DDoS Attack Detected"
 
 ### Status Display (Normal)
 ```
-📊 Status: 150 total requests in last 60s - Normal
-📊 Status: 200 total requests in last 60s - Normal
+ Status: 150 total requests in last 60s - Normal
+ Status: 200 total requests in last 60s - Normal
 ```
 
 
 
 ### Status Display (Every 60 seconds)
 ```
-📊 Status: 150 total requests in last 60s - Normal
-📊 Status: 200 total requests in last 60s - Normal
+ Status: 150 total requests in last 60s - Normal
+ Status: 200 total requests in last 60s - Normal
 ```
 
 ## Troubleshooting
@@ -277,6 +279,63 @@ docker build -t hubble-anomaly-detector .
 docker run -it --rm hubble-anomaly-detector
 ```
 
+## Kubernetes Deployment với Helm
+
+### Prerequisites
+
+- Kubernetes cluster (1.19+)
+- Helm 3.0+
+- kubectl configured
+- Hubble Relay installed
+
+### Quick Start
+
+**Triển khai nhanh:**
+
+```bash
+# 1. Tạo file cấu hình my-values.yaml (xem mẫu bên dưới)
+
+# 2. Triển khai với Helm
+helm install hubble-guard ./helm/hubble-guard \
+  -n hubble-guard \
+  --create-namespace \
+  -f my-values.yaml
+
+# 3. Kiểm tra deployment
+kubectl get pods -n hubble-guard
+```
+
+**File my-values.yaml mẫu:**
+
+```yaml
+application:
+  hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
+
+anomalyDetector:
+  image:
+    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    tag: "1.0.0"
+
+grafana:
+  adminPassword: "your-secure-password"
+```
+
+### Tài Liệu Chi Tiết
+
+📖 **Xem hướng dẫn đầy đủ**: [`HUONG_DAN_TRIEN_KHAI_K8S.md`](./HUONG_DAN_TRIEN_KHAI_K8S.md)
+
+Hướng dẫn chi tiết bao gồm:
+- Các bước triển khai từng bước
+- Cấu hình cho các môi trường khác nhau
+- Troubleshooting các vấn đề thường gặp
+- Cấu hình bảo mật và best practices
+
+### Tài Liệu Helm Chart
+
+- **Helm Chart Documentation**: [`HELM_CHART_DEPLOYMENT.md`](./HELM_CHART_DEPLOYMENT.md) - Tài liệu chi tiết về cấu trúc chart
+- **Chart README**: [`helm/hubble-guard/README.md`](./helm/hubble-guard/README.md) - Tài liệu nhanh về chart
+- **Values File**: [`helm/hubble-guard/values.yaml`](./helm/hubble-guard/values.yaml) - Tất cả các tùy chọn cấu hình
+
 ## Đóng góp
 
 1. Fork repository
@@ -300,7 +359,7 @@ docker run -it --rm hubble-anomaly-detector
 
 ### v1.0.0 - Phiên bản đầu tiên
 - 🚀 Tính năng cơ bản: kết nối Hubble, anomaly detection
-- 📊 Redis-based caching và rule engine
+-  Redis-based caching và rule engine
 - 🎯 Interactive menu interface
 
 ## License

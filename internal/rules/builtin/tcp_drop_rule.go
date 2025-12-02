@@ -11,22 +11,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// TCPDropRule detects TCP drop surges
 type TCPDropRule struct {
 	name       string
 	enabled    bool
 	severity   string
-	threshold  int              // drops per minute
-	dropCounts map[string]int64 // namespace -> count
+	threshold  int
+	dropCounts map[string]int64
 	lastReset  map[string]time.Time
 	logger     *logrus.Logger
 	mu         sync.RWMutex
 }
 
-// NewTCPDropRule creates a new TCP drop rule
 func NewTCPDropRule(enabled bool, severity string, threshold int, logger *logrus.Logger) *TCPDropRule {
 	if threshold <= 0 {
-		threshold = 10 // default 10 drops per minute
+		threshold = 10
 	}
 	return &TCPDropRule{
 		name:       "tcp_drop_surge",
@@ -39,23 +37,19 @@ func NewTCPDropRule(enabled bool, severity string, threshold int, logger *logrus
 	}
 }
 
-// Name returns the rule name
 func (r *TCPDropRule) Name() string {
 	return r.name
 }
 
-// IsEnabled returns whether the rule is enabled
 func (r *TCPDropRule) IsEnabled() bool {
 	return r.enabled
 }
 
-// Evaluate evaluates the rule against a flow
 func (r *TCPDropRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert {
 	if !r.enabled || flow == nil {
 		return nil
 	}
 
-	// Check for TCP drop (verdict DROPPED)
 	if flow.Verdict != model.Verdict_DROPPED {
 		return nil
 	}
@@ -76,7 +70,6 @@ func (r *TCPDropRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Ale
 	}
 	r.mu.Unlock()
 
-	// Check every minute
 	now := time.Now()
 	if now.Sub(lastReset) >= 1*time.Minute {
 		alert := r.checkDropSurge(namespace)

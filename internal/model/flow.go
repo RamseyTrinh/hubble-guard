@@ -24,6 +24,10 @@ const (
 	Verdict_FORWARDED       Verdict = 1
 	Verdict_DROPPED         Verdict = 2
 	Verdict_ERROR           Verdict = 3
+	Verdict_AUDIT           Verdict = 4
+	Verdict_REDIRECTED      Verdict = 5
+	Verdict_TRACED          Verdict = 6
+	Verdict_TRANSLATED      Verdict = 7
 )
 
 func (v Verdict) String() string {
@@ -34,24 +38,29 @@ func (v Verdict) String() string {
 		return "DROPPED"
 	case Verdict_ERROR:
 		return "ERROR"
+	case Verdict_AUDIT:
+		return "AUDIT"
+	case Verdict_REDIRECTED:
+		return "REDIRECTED"
+	case Verdict_TRACED:
+		return "TRACED"
+	case Verdict_TRANSLATED:
+		return "TRANSLATED"
 	default:
 		return "UNKNOWN"
 	}
 }
 
-// IP represents IP layer information
 type IP struct {
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
 }
 
-// L4 represents Layer 4 information
 type L4 struct {
 	TCP *TCP `json:"tcp,omitempty"`
 	UDP *UDP `json:"udp,omitempty"`
 }
 
-// TCP represents TCP information
 type TCP struct {
 	SourcePort      uint32    `json:"source_port"`
 	DestinationPort uint32    `json:"destination_port"`
@@ -59,14 +68,12 @@ type TCP struct {
 	Bytes           uint32    `json:"bytes"`
 }
 
-// UDP represents UDP information
 type UDP struct {
 	SourcePort      uint32 `json:"source_port"`
 	DestinationPort uint32 `json:"destination_port"`
 	Bytes           uint32 `json:"bytes"`
 }
 
-// TCPFlags represents TCP flags
 type TCPFlags struct {
 	SYN bool `json:"syn"`
 	ACK bool `json:"ack"`
@@ -108,12 +115,10 @@ func (f *TCPFlags) String() string {
 	return result
 }
 
-// L7 represents Layer 7 information
 type L7 struct {
 	Type L7Type `json:"type"`
 }
 
-// L7Type represents Layer 7 protocol type
 type L7Type int32
 
 const (
@@ -136,7 +141,6 @@ func (t L7Type) String() string {
 	}
 }
 
-// FlowType represents the type of flow
 type FlowType int32
 
 const (
@@ -156,7 +160,6 @@ func (t FlowType) String() string {
 	}
 }
 
-// Endpoint represents a network endpoint with namespace information
 type Endpoint struct {
 	Namespace   string            `json:"namespace"`
 	PodName     string            `json:"pod_name"`

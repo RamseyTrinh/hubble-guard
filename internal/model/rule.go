@@ -2,7 +2,6 @@ package model
 
 import "time"
 
-// Rule represents a rule definition for anomaly detection
 type Rule struct {
 	Name        string                 `yaml:"name" json:"name"`
 	Enabled     bool                   `yaml:"enabled" json:"enabled"`
@@ -14,14 +13,12 @@ type Rule struct {
 	Conditions  []Condition            `yaml:"conditions,omitempty" json:"conditions,omitempty"`
 }
 
-// Condition represents a condition for rule evaluation
 type Condition struct {
 	Field    string      `yaml:"field" json:"field"`
 	Operator string      `yaml:"operator" json:"operator"`
 	Value    interface{} `yaml:"value" json:"value"`
 }
 
-// RuleConfig is used for loading rules from config
 type RuleConfig struct {
 	Enabled             bool     `json:"enabled"`
 	Severity            string   `json:"severity"`
@@ -30,16 +27,15 @@ type RuleConfig struct {
 	ThresholdPerMinute  *int     `json:"threshold_per_minute,omitempty"`
 }
 
-// Alert represents an anomaly alert
 type Alert struct {
 	Type      string    `json:"type"`
 	Severity  string    `json:"severity"`
+	Namespace string    `json:"namespace"`
 	Message   string    `json:"message"`
 	Timestamp time.Time `json:"timestamp"`
 	FlowData  *Flow     `json:"flow_data,omitempty"`
 }
 
-// FlowStats holds statistics about network flows
 type FlowStats struct {
 	TotalFlows       int64
 	TotalBytes       int64

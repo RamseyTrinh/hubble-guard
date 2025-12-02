@@ -1,0 +1,405 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-api
+  namespace: default
+  labels:
+    app: demo-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: demo-api
+  template:
+    metadata:
+      labels:
+        app: demo-api
+    spec:
+      containers:
+        - name: api
+          image: mccutchen/go-httpbin:v2.14.0
+          ports:
+            - containerPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-api
+  namespace: default
+  labels:
+    app: demo-api
+spec:
+  selector:
+    app: demo-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: demo-frontend-config
+  namespace: default
+data:
+  nginx.conf: |
+    events {}
+    http {
+      upstream demo_api {
+        server demo-api.default.svc.cluster.local:80;
+      }
+      server {
+        listen 8080;
+        # Static page
+        location / {
+          root /usr/share/nginx/html;
+          index index.html;
+        }
+        # Proxy to backend
+        location /api/ {
+          proxy_pass http://demo_api/;
+        }
+      }
+    }
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+    <head>
+      <meta charset="utf-8"/>
+      <title>Anomaly Detection Test Scenarios</title>
+      <style>
+        body { font-family: system-ui, Arial; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        h2 { color: #333; margin-top: 0; }
+        .row { display:flex; gap:12px; align-items:center; margin:8px 0; flex-wrap: wrap; }
+        .badge { padding:4px 12px; border-radius:12px; background:#e3f2fd; color:#1976d2; font-size:12px; font-weight:500; }
+        .rule-badge { padding:2px 8px; border-radius:8px; background:#fff3e0; color:#e65100; font-size:11px; margin-left:8px; }
+        button { padding:8px 16px; border:none; border-radius:4px; cursor:pointer; font-size:14px; font-weight:500; transition:all 0.2s; }
+        button:hover { transform: translateY(-1px); box-shadow: 0 2px 4px rgba(0,0,0,0.2); }
+        button:active { transform: translateY(0); }
+        #normal { background:#4caf50; color:white; }
+        #spike { background:#ff9800; color:white; }
+        #ddos { background:#f44336; color:white; }
+        #portscan { background:#9c27b0; color:white; }
+        #suspicious { background:#e91e63; color:white; }
+        #stop { background:#757575; color:white; }
+        label { font-size:14px; }
+        input[type="number"] { width:80px; padding:4px 8px; border:1px solid #ddd; border-radius:4px; }
+        #log { height: 300px; overflow:auto; border:1px solid #ddd; padding:12px; background:#fafafa; font-family: monospace; font-size:12px; line-height:1.6; }
+        .log-entry { margin:2px 0; }
+        .scenario-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin:16px 0; }
+        .scenario-card { border:1px solid #ddd; border-radius:4px; padding:12px; background:#fafafa; }
+        .scenario-card h3 { margin:0 0 8px 0; font-size:14px; color:#333; }
+        .scenario-card p { margin:4px 0; font-size:12px; color:#666; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>Anomaly Detection Test Scenarios</h2>
+        <p>Test các rule builtin trong hệ thống phát hiện bất thường</p>
+
+        <div class="row">
+          <span class="badge">API Endpoints</span>
+          <code>/api/delay/{0–2}s</code>, <code>/api/status/{200,204,404,500}</code>
+        </div>
+
+        <div class="scenario-grid">
+          <div class="scenario-card">
+            <h3>Normal Traffic <span class="rule-badge">Baseline</span></h3>
+            <p>Traffic bình thường để thiết lập baseline cho các rule</p>
+            <button id="normal">Start Normal</button>
+          </div>
+          <div class="scenario-card">
+            <h3>Traffic Spike <span class="rule-badge">traffic_spike</span></h3>
+            <p>Burst traffic (30 requests every 3s) để test Traffic Spike Rule</p>
+            <button id="spike">Start Spike</button>
+          </div>
+          <div class="scenario-card">
+            <h3>DDoS Flood <span class="rule-badge">ddos</span></h3>
+            <p>Flood traffic liên tục để test DDoS Rule</p>
+            <button id="ddos">Start DDoS</button>
+          </div>
+          <div class="scenario-card">
+            <h3>Port Scan <span class="rule-badge">port_scan</span></h3>
+            <p>Quét nhiều port khác nhau để test Port Scan Rule</p>
+            <button id="portscan">Start Port Scan</button>
+          </div>
+          <div class="scenario-card">
+            <h3>Suspicious Out<span class="rule-badge">suspicious_out</span></h3>
+            <p>Traffic đến các port đáng ngờ (cần cấu hình network)</p>
+            <button id="suspicious">Start Suspicious</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:16px;">
+          <button id="stop" style="background:#d32f2f;">Stop All</button>
+          <label>Normal Interval (ms):
+            <input id="ival" type="number" value="3000" min="100" step="100"/>
+          </label>
+        </div>
+
+        <div id="log"></div>
+      </div>
+
+      <script>
+        let timers = []; // setInterval timers
+        let timeouts = []; // setTimeout timers
+        let abortControllers = []; // AbortController for fetch requests
+        let activeScenario = null;
+
+        const log = (m, type = 'info') => {
+          const el = document.getElementById('log');
+          const t = new Date().toLocaleTimeString();
+          const colors = {
+            info: '#333',
+            success: '#4caf50',
+            warning: '#ff9800',
+            error: '#f44336'
+          };
+          const color = colors[type] || colors.info;
+          const entry = document.createElement('div');
+          entry.className = 'log-entry';
+          entry.style.color = color;
+          entry.textContent = `[${t}] ${m}`;
+          el.insertBefore(entry, el.firstChild);
+          if (el.children.length > 100) el.removeChild(el.lastChild);
+        };
+
+        const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+        const clearAllTimers = () => {
+          // Abort all pending fetch requests
+          abortControllers.forEach(controller => {
+            if (controller && !controller.signal.aborted) {
+              controller.abort();
+            }
+          });
+          abortControllers = [];
+          
+          // Clear all setInterval timers
+          timers.forEach(t => {
+            if (t) clearInterval(t);
+          });
+          timers = [];
+          
+          // Clear all setTimeout timers
+          timeouts.forEach(t => {
+            if (t) clearTimeout(t);
+          });
+          timeouts = [];
+          
+          activeScenario = null;
+        };
+
+        async function send(path, options = {}) {
+          // Create AbortController for this request
+          const controller = new AbortController();
+          abortControllers.push(controller);
+          
+          const url = `/api/${path}`;
+          const t0 = performance.now();
+          try {
+            const res = await fetch(url, { 
+              cache: "no-store", 
+              signal: controller.signal,
+              ...options 
+            });
+            const t1 = performance.now();
+            log(`${url} → ${res.status} (${(t1-t0).toFixed(0)} ms)`, res.status >= 400 ? 'error' : 'success');
+            return { status: res.status, time: t1 - t0 };
+          } catch (e) {
+            if (e.name === 'AbortError') {
+              // Request was cancelled, don't log as error
+              return { status: 0, time: 0, aborted: true };
+            }
+            log(`${url} → ERROR: ${e.message}`, 'error');
+            return { status: 0, time: 0, error: e };
+          } finally {
+            // Remove controller from array when done
+            const index = abortControllers.indexOf(controller);
+            if (index > -1) abortControllers.splice(index, 1);
+          }
+        }
+
+        // Normal Traffic - Baseline cho các rule
+        document.getElementById('normal').onclick = () => {
+          clearAllTimers();
+          activeScenario = 'normal';
+          const ival = parseInt(document.getElementById('ival').value || 3000, 10);
+          log(`Starting Normal Traffic (baseline) at ${ival}ms interval`, 'info');
+          const timer = setInterval(() => {
+            if (activeScenario !== 'normal') {
+              clearInterval(timer);
+              return;
+            }
+            const path = Math.random() < 0.5
+              ? `delay/${(Math.random() * 2).toFixed(1)}`
+              : `status/${pick([200, 204, 404])}`;
+            send(path);
+          }, ival);
+          timers.push(timer);
+        };
+
+        // Traffic Spike - Burst traffic
+        document.getElementById('spike').onclick = () => {
+          clearAllTimers();
+          activeScenario = 'spike';
+          log('Starting Traffic Spike scenario (bursts of 30 requests every 3s)', 'warning');
+          const timer = setInterval(() => {
+            if (activeScenario !== 'spike') {
+              clearInterval(timer);
+              return;
+            }
+            for (let i = 0; i < 30; i++) {
+              const timeoutId = setTimeout(() => {
+                if (activeScenario === 'spike') {
+                  send(`status/${pick([200, 200, 200, 204, 404])}`);
+                }
+              }, i * 10);
+              timeouts.push(timeoutId);
+            }
+            log('Spike burst sent (30 requests)', 'warning');
+          }, 3000);
+          timers.push(timer);
+        };
+
+        // DDoS Flood - Continuous high-frequency traffic
+        document.getElementById('ddos').onclick = () => {
+          clearAllTimers();
+          activeScenario = 'ddos';
+          log('Starting DDoS Flood scenario (very high frequency)', 'error');
+          const timer = setInterval(() => {
+            if (activeScenario !== 'ddos') {
+              clearInterval(timer);
+              return;
+            }
+            send(`status/${pick([200, 204, 404])}`);
+          }, 30); // 30ms = ~33 requests/second
+          timers.push(timer);
+        };
+
+        // Port Scan - Simulate scanning multiple ports
+        document.getElementById('portscan').onclick = () => {
+          clearAllTimers();
+          activeScenario = 'portscan';
+          log('Starting Port Scan scenario (scanning multiple endpoints rapidly)', 'warning');
+          const endpoints = ['status/200', 'status/204', 'status/404', 'delay/0.1', 'delay/0.5', 'delay/1.0', 'status/500'];
+          let endpointIndex = 0;
+          const timer = setInterval(() => {
+            if (activeScenario !== 'portscan') {
+              clearInterval(timer);
+              return;
+            }
+            // Send to different endpoints rapidly to simulate port scanning
+            for (let i = 0; i < 15; i++) {
+              const endpoint = endpoints[(endpointIndex + i) % endpoints.length];
+              const timeoutId = setTimeout(() => {
+                if (activeScenario === 'portscan') {
+                  send(endpoint);
+                }
+              }, i * 5);
+              timeouts.push(timeoutId);
+            }
+            endpointIndex = (endpointIndex + 1) % endpoints.length;
+            log(`Port scan batch sent (15 requests to different endpoints)`, 'warning');
+          }, 200); // Every 200ms
+          timers.push(timer);
+        };
+
+        // Suspicious Outbound - Attempt connections to suspicious patterns
+        document.getElementById('suspicious').onclick = () => {
+          clearAllTimers();
+          activeScenario = 'suspicious';
+          log('Starting Suspicious Outbound scenario (note: requires network-level testing)', 'warning');
+          // Use endpoints that won't trigger auth modals (avoid 401, 403)
+          // Note: Actual port-level detection requires network policies/Cilium
+          // Using 500, 502, 503 instead to avoid auth modals
+          const suspiciousPaths = ['status/500', 'status/502', 'status/503', 'status/504'];
+          const timer = setInterval(() => {
+            if (activeScenario !== 'suspicious') {
+              clearInterval(timer);
+              return;
+            }
+            // Send to suspicious endpoints
+            for (let i = 0; i < 10; i++) {
+              const timeoutId = setTimeout(() => {
+                if (activeScenario === 'suspicious') {
+                  send(pick(suspiciousPaths));
+                }
+              }, i * 20);
+              timeouts.push(timeoutId);
+            }
+            log('Suspicious outbound batch sent', 'warning');
+          }, 1000);
+          timers.push(timer);
+        };
+
+        // Stop All
+        document.getElementById('stop').onclick = () => {
+          clearAllTimers();
+          activeScenario = null;
+          log('All scenarios stopped', 'info');
+        };
+      </script>
+    </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-frontend
+  namespace: default
+  labels:
+    app: demo-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: demo-frontend
+  template:
+    metadata:
+      labels:
+        app: demo-frontend
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: cfg
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+            - name: html
+              mountPath: /usr/share/nginx/html/index.html
+              subPath: index.html
+      volumes:
+        - name: cfg
+          configMap:
+            name: demo-frontend-config
+            items:
+              - key: nginx.conf
+                path: nginx.conf
+        - name: html
+          configMap:
+            name: demo-frontend-config
+            items:
+              - key: index.html
+                path: index.html
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-frontend
+  namespace: default
+  labels:
+    app: demo-frontend
+spec:
+  selector:
+    app: demo-frontend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP

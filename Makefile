@@ -1,11 +1,13 @@
 # Hubble Anomaly Detector Makefile
 
-.PHONY: build run clean test deps help
+.PHONY: build run clean test deps help api-run api-build
 
 # Variables
 BINARY_NAME=hubble-anomaly-detector
 BUILD_DIR=build
 VERSION=1.0.0
+DOCKER_REGISTRY=docker.io/ramseytrinh338
+DOCKER_USERNAME=ramseytrinh338
 
 # Default target
 all: build
@@ -31,11 +33,24 @@ run-dev: build
 	@echo "Running $(BINARY_NAME) in development mode..."
 	@./$(BUILD_DIR)/$(BINARY_NAME) --log-level=debug --hubble-server=localhost:4245
 
+# API Server commands (run from root)
+api-run:
+	@echo "Starting API server on port 5001..."
+	@go run api/main.go -port=5001 -config=configs/anomaly_detection.yaml
+
+api-build:
+	@echo "Building API server..."
+	@mkdir -p bin
+	@go build -o bin/api-server api/main.go
+	@echo "Binary built: bin/api-server"
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 	@rm -f alerts.log
+	@rm -f bin/api-server
+	@rm -f bin/api-server.exe
 	@echo "Clean complete"
 
 # Install dependencies
@@ -83,22 +98,95 @@ release: clean build-all
 	@echo "Creating release package..."
 	@mkdir -p $(BUILD_DIR)/release
 	@cp $(BUILD_DIR)/$(BINARY_NAME)-* $(BUILD_DIR)/release/
-	@cp README.md config.json $(BUILD_DIR)/release/
+	@cp README.md $(BUILD_DIR)/release/
 	@cd $(BUILD_DIR) && tar -czf $(BINARY_NAME)-$(VERSION).tar.gz release/
 	@echo "Release package created: $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION).tar.gz"
+
+# Docker build
+docker-build:
+	@echo "Building Docker image..."
+	@docker build -t hubble-anomaly-detector:$(VERSION) .
+	@echo "Docker image built: hubble-anomaly-detector:$(VERSION)"
+
+# Docker push (set DOCKER_REGISTRY env var)
+docker-push:
+	@if [ -z "$(DOCKER_REGISTRY)" ]; then \
+		echo "Error: DOCKER_REGISTRY not set"; \
+		exit 1; \
+	fi
+	@if [ -z "$(DOCKER_USERNAME)" ] || [ -z "$(DOCKER_PASSWORD)" ]; then \
+		echo "Error: DOCKER_USERNAME or DOCKER_PASSWORD not set"; \
+		exit 1; \
+	fi
+	@echo "Logging in to registry $(DOCKER_REGISTRY)..."
+	@echo "$(DOCKER_PASSWORD)" | docker login $(DOCKER_REGISTRY) -u "$(DOCKER_USERNAME)" --password-stdin
+	@echo "Tagging and pushing image..."
+	@docker tag hubble-anomaly-detector:$(VERSION) $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)
+	@docker tag hubble-anomaly-detector:$(VERSION) $(DOCKER_REGISTRY)/hubble-anomaly-detector:latest
+	@docker push $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)
+	@docker push $(DOCKER_REGISTRY)/hubble-anomaly-detector:latest
+	@echo "Image pushed to $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)"
+
+# Helm lint
+helm-lint:
+	@echo "Linting Helm chart..."
+	@helm lint ./helm/hubble-anomaly-detector
+	@echo "Helm lint complete"
+
+# Helm package
+helm-package:
+	@echo "Packaging Helm chart..."
+	@helm package ./helm/hubble-anomaly-detector
+	@echo "Helm chart packaged"
+
+# Helm install (set NAMESPACE env var, default: hubble)
+helm-install: helm-lint
+	@NAMESPACE=$${NAMESPACE:-hubble}; \
+	echo "Installing Helm chart to namespace $$NAMESPACE..."; \
+	helm install hubble-detector ./helm/hubble-anomaly-detector \
+		--namespace $$NAMESPACE \
+		--create-namespace
+
+# Helm upgrade
+helm-upgrade: helm-lint
+	@NAMESPACE=$${NAMESPACE:-hubble}; \
+	echo "Upgrading Helm chart in namespace $$NAMESPACE..."; \
+	helm upgrade hubble-detector ./helm/hubble-anomaly-detector \
+		--namespace $$NAMESPACE
+
+# Helm uninstall
+helm-uninstall:
+	@NAMESPACE=$${NAMESPACE:-hubble}; \
+	echo "Uninstalling Helm chart from namespace $$NAMESPACE..."; \
+	helm uninstall hubble-detector --namespace $$NAMESPACE
+
+# Helm template (dry-run)
+helm-template:
+	@echo "Rendering Helm templates..."
+	@helm template hubble-detector ./helm/hubble-anomaly-detector
 
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  build        - Build the application"
-	@echo "  run          - Build and run the application"
-	@echo "  run-dev      - Run in development mode with debug logging"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  deps         - Install dependencies"
-	@echo "  test         - Run tests"
-	@echo "  test-coverage - Run tests with coverage report"
-	@echo "  fmt          - Format code"
-	@echo "  lint         - Lint code"
-	@echo "  build-all    - Build for multiple platforms"
-	@echo "  release      - Create release package"
-	@echo "  help         - Show this help message"
+	@echo "  build          - Build the application"
+	@echo "  run            - Build and run the application"
+	@echo "  run-dev        - Run in development mode with debug logging"
+	@echo "  api-run        - Run API server (from root directory)"
+	@echo "  api-build      - Build API server binary"
+	@echo "  clean          - Clean build artifacts"
+	@echo "  deps           - Install dependencies"
+	@echo "  test           - Run tests"
+	@echo "  test-coverage  - Run tests with coverage report"
+	@echo "  fmt            - Format code"
+	@echo "  lint           - Lint code"
+	@echo "  build-all      - Build for multiple platforms"
+	@echo "  release        - Create release package"
+	@echo "  docker-build   - Build Docker image"
+	@echo "  docker-push    - Build and push Docker image (requires DOCKER_REGISTRY)"
+	@echo "  helm-lint      - Lint Helm chart"
+	@echo "  helm-package   - Package Helm chart"
+	@echo "  helm-install   - Install Helm chart (set NAMESPACE env var, default: hubble)"
+	@echo "  helm-upgrade   - Upgrade Helm chart"
+	@echo "  helm-uninstall - Uninstall Helm chart"
+	@echo "  helm-template  - Render Helm templates (dry-run)"
+	@echo "  help           - Show this help message"

@@ -4,12 +4,12 @@ import (
 	"context"
 	"sync"
 
+	"hubble-anomaly-detector/internal/client"
 	"hubble-anomaly-detector/internal/model"
 
 	"github.com/sirupsen/logrus"
 )
 
-// Engine evaluates rules against flows and emits alerts
 type Engine struct {
 	rules          []RuleInterface
 	alertNotifiers []NotifierInterface
@@ -18,12 +18,10 @@ type Engine struct {
 	alertChannel   chan model.Alert
 }
 
-// NotifierInterface defines the interface for alert notification
 type NotifierInterface interface {
 	SendAlert(alert model.Alert) error
 }
 
-// NewEngine creates a new rule engine
 func NewEngine(logger *logrus.Logger) *Engine {
 	return &Engine{
 		rules:          make([]RuleInterface, 0),
@@ -33,7 +31,6 @@ func NewEngine(logger *logrus.Logger) *Engine {
 	}
 }
 
-// RegisterRule registers a rule with the engine
 func (e *Engine) RegisterRule(rule RuleInterface) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -41,14 +38,12 @@ func (e *Engine) RegisterRule(rule RuleInterface) {
 	e.logger.Infof("Registered rule: %s", rule.Name())
 }
 
-// RegisterNotifier registers an alert notifier
 func (e *Engine) RegisterNotifier(notifier NotifierInterface) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.alertNotifiers = append(e.alertNotifiers, notifier)
 }
 
-// Evaluate evaluates all registered rules against a flow and emits alerts
 func (e *Engine) Evaluate(ctx context.Context, flow *model.Flow) []model.Alert {
 	e.mu.RLock()
 	rules := make([]RuleInterface, len(e.rules))
@@ -61,7 +56,6 @@ func (e *Engine) Evaluate(ctx context.Context, flow *model.Flow) []model.Alert {
 		if rule.IsEnabled() {
 			if alert := rule.Evaluate(ctx, flow); alert != nil {
 				alerts = append(alerts, *alert)
-				// Emit alert immediately
 				e.EmitAlert(*alert)
 			}
 		}
@@ -70,8 +64,9 @@ func (e *Engine) Evaluate(ctx context.Context, flow *model.Flow) []model.Alert {
 	return alerts
 }
 
-// EmitAlert sends an alert to all registered notifiers
 func (e *Engine) EmitAlert(alert model.Alert) {
+	RecordAlertMetrics(alert)
+
 	select {
 	case e.alertChannel <- alert:
 	default:
@@ -90,12 +85,34 @@ func (e *Engine) EmitAlert(alert model.Alert) {
 	}
 }
 
-// GetAlertChannel returns the alert channel
+var globalMetrics *client.PrometheusMetrics
+
+func SetGlobalMetrics(metrics *client.PrometheusMetrics) {
+	globalMetrics = metrics
+}
+
+func RecordAlertMetrics(alert model.Alert) {
+	if globalMetrics != nil {
+		namespace := alert.Namespace
+		if namespace == "" {
+			namespace = "unknown"
+		}
+		severity := alert.Severity
+		if severity == "" {
+			severity = "unknown"
+		}
+		alertType := alert.Type
+		if alertType == "" {
+			alertType = "unknown"
+		}
+		globalMetrics.RecordAlert(namespace, severity, alertType)
+	}
+}
+
 func (e *Engine) GetAlertChannel() <-chan model.Alert {
 	return e.alertChannel
 }
 
-// RuleInterface defines the interface for rules
 type RuleInterface interface {
 	Name() string
 	IsEnabled() bool

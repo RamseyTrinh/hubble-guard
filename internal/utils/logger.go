@@ -4,7 +4,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// NewLogger creates a new logger instance
 func NewLogger(level string) *logrus.Logger {
 	logger := logrus.New()
 	logger.SetLevel(logrus.InfoLevel)
@@ -24,4 +23,3 @@ func NewLogger(level string) *logrus.Logger {
 
 	return logger
 }
-

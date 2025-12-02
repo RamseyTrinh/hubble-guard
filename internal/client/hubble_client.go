@@ -14,16 +14,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
-// HubbleGRPCClient connects to Hubble relay via gRPC
 type HubbleGRPCClient struct {
 	conn    *grpc.ClientConn
 	server  string
 	metrics *PrometheusMetrics
 }
 
-// NewHubbleGRPCClient creates a new gRPC client
 func NewHubbleGRPCClient(server string) (*HubbleGRPCClient, error) {
-	// Connect to Hubble server via gRPC
 	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Hubble server: %v", err)
@@ -36,9 +33,7 @@ func NewHubbleGRPCClient(server string) (*HubbleGRPCClient, error) {
 	}, nil
 }
 
-// NewHubbleGRPCClientWithMetrics creates a new gRPC client with custom metrics
 func NewHubbleGRPCClientWithMetrics(server string, metrics *PrometheusMetrics) (*HubbleGRPCClient, error) {
-	// Connect to Hubble server via gRPC
 	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Hubble server: %v", err)
@@ -51,31 +46,25 @@ func NewHubbleGRPCClientWithMetrics(server string, metrics *PrometheusMetrics) (
 	}, nil
 }
 
-// Close closes the connection
 func (c *HubbleGRPCClient) Close() error {
 	return c.conn.Close()
 }
 
-// TestConnection tests the connection to Hubble server
 func (c *HubbleGRPCClient) TestConnection(ctx context.Context) error {
-	// Wait for connection to be ready with timeout
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	// Check if connection is already ready
 	state := c.conn.GetState()
 	if state.String() == "READY" {
 		fmt.Printf("Successfully connected to Hubble relay at %s\n", c.server)
 		return nil
 	}
 
-	// Wait for state change
 	ready := c.conn.WaitForStateChange(ctx, state)
 	if !ready {
 		return fmt.Errorf("connection test failed: timeout waiting for connection")
 	}
 
-	// Check final state
 	finalState := c.conn.GetState()
 	if finalState.String() == "READY" {
 		fmt.Printf("Successfully connected to Hubble relay at %s\n", c.server)
@@ -83,74 +72,6 @@ func (c *HubbleGRPCClient) TestConnection(ctx context.Context) error {
 	}
 
 	return fmt.Errorf("connection test failed: connection state is %s", finalState.String())
-}
-
-// StreamFlowsViewOnly streams flows from Hubble and only prints them (no Redis)
-func (c *HubbleGRPCClient) StreamFlowsViewOnly(ctx context.Context, namespace string) error {
-	fmt.Println("🚀 Starting to stream flows from Hubble relay...")
-	if namespace != "" {
-		fmt.Printf("📋 Filtering flows for namespace: %s\n", namespace)
-	}
-	fmt.Println("Press Ctrl+C to stop")
-	fmt.Println(strings.Repeat("=", 80))
-
-	client := observer.NewObserverClient(c.conn)
-
-	req := &observer.GetFlowsRequest{
-		Follow: true, // Stream flows continuously
-	}
-
-	if namespace != "" {
-		req.Whitelist = []*observer.FlowFilter{
-			{
-				SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-			{
-				DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-		}
-	}
-
-	stream, err := client.GetFlows(ctx, req)
-	if err != nil {
-		return fmt.Errorf("failed to start flow streaming: %v", err)
-	}
-
-	flowCount := 0
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("\n Stopped streaming flows")
-			return nil
-		default:
-			// Receive flow from stream
-			response, err := stream.Recv()
-			if err == io.EOF {
-				fmt.Println(" Stream ended")
-				return nil
-			}
-			if err != nil {
-				return fmt.Errorf("failed to receive flow: %v", err)
-			}
-
-			flowCount++
-
-			// Convert Hubble flow to our Flow struct
-			flow := c.convertHubbleFlow(response.GetFlow())
-			if flow != nil {
-				// Record metrics
-				if c.metrics != nil {
-					c.metrics.RecordFlow(flow)
-					// Record additional metrics for anomaly detection
-					c.recordAnomalyDetectionMetrics(flow)
-				}
-			}
-
-			// Print flow details for viewing
-			c.printFlow(flowCount, response)
-		}
-	}
 }
 
 func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsResponse) {
@@ -163,7 +84,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 	verdict := flow.GetVerdict().String()
 	flowType := flow.GetType().String()
 
-	// IP Layer Information
 	sourceIP := "unknown"
 	destIP := "unknown"
 	if flow.GetIP() != nil {
@@ -171,7 +91,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 		destIP = flow.GetIP().GetDestination()
 	}
 
-	// L4 Layer Information
 	sourcePort := "unknown"
 	destPort := "unknown"
 	protocol := "unknown"
@@ -188,7 +107,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 		}
 	}
 
-	// Source Endpoint Information
 	sourceInfo := fmt.Sprintf("%s:%s", sourceIP, sourcePort)
 	sourceLabels := ""
 	if source := flow.GetSource(); source != nil {
@@ -203,7 +121,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 		}
 	}
 
-	// Destination Endpoint Information
 	destInfo := fmt.Sprintf("%s:%s", destIP, destPort)
 	destLabels := ""
 	if destination := flow.GetDestination(); destination != nil {
@@ -218,7 +135,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 		}
 	}
 
-	// TCP Flags
 	tcpFlags := ""
 	if flow.GetL4() != nil {
 		if tcp := flow.GetL4().GetTCP(); tcp != nil && tcp.GetFlags() != nil {
@@ -247,7 +163,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 		}
 	}
 
-	// L7 Layer Information
 	l7Info := ""
 	if flow.GetL7() != nil {
 		l7Type := flow.GetL7().GetType().String()
@@ -268,7 +183,6 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 		}
 	}
 
-	// Print comprehensive flow information
 	fmt.Printf("\n%s\n", strings.Repeat("=", 80))
 	fmt.Printf("FLOW #%d - %s\n", flowCount, timeStr)
 	fmt.Printf("%s\n", strings.Repeat("=", 80))
@@ -318,7 +232,7 @@ func (c *HubbleGRPCClient) printFlow(flowCount int, response *observer.GetFlowsR
 	fmt.Printf("%s\n", strings.Repeat("-", 80))
 }
 
-// recordAnomalyDetectionMetrics ghi lại các metrics cần thiết cho anomaly detection
+// Record lại các metrics cần thiết cho anomaly detection
 func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 	if flow == nil || c.metrics == nil {
 		return
@@ -331,40 +245,57 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 		namespace = flow.Destination.Namespace
 	}
 
-	// Record TCP resets
 	if flow.L4 != nil && flow.L4.TCP != nil && flow.L4.TCP.Flags != nil && flow.L4.TCP.Flags.RST {
 		if flow.IP != nil {
 			c.metrics.RecordTCPReset(namespace, flow.IP.Source, flow.IP.Destination)
 		}
 	}
 
-	// Record TCP drops (verdict DROPPED)
 	if flow.Verdict == model.Verdict_DROPPED {
 		if flow.IP != nil {
 			c.metrics.RecordTCPDrop(namespace, flow.IP.Source, flow.IP.Destination)
 		}
 	}
 
-	// Record new destinations
 	if flow.IP != nil {
 		c.metrics.RecordNewDestination(flow.IP.Source, flow.IP.Destination, namespace)
 	}
 
-	// Record error responses (L7 errors)
+	if flow.IP != nil && flow.L4 != nil {
+		var destPort uint16
+		if flow.L4.TCP != nil && flow.L4.TCP.DestinationPort > 0 {
+			destPort = uint16(flow.L4.TCP.DestinationPort)
+		} else if flow.L4.UDP != nil && flow.L4.UDP.DestinationPort > 0 {
+			destPort = uint16(flow.L4.UDP.DestinationPort)
+		}
+		if destPort > 0 {
+			c.metrics.UpdatePortScanDistinctPorts(flow.IP.Source, flow.IP.Destination, namespace, destPort)
+		}
+	}
+
 	if flow.L7 != nil {
 		c.metrics.RecordErrorResponse(namespace, "l7_flow")
 	}
 }
 
-// StreamFlowsWithMetricsOnly streams flows from Hubble and records metrics without detailed flow logging
-// flowProcessor is optional - if nil, flows are only sent to Prometheus metrics
-func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespace string, flowCounter func(string), flowProcessor func(*model.Flow)) error {
-	fmt.Println("🚀 Starting to stream flows from Hubble relay with metrics (no flow logs)...")
-	if namespace != "" {
-		fmt.Printf("📋 Filtering flows for namespace: %s\n", namespace)
+func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
+	fmt.Println("Starting to stream flows from Hubble relay with metrics")
+
+	var nsList []string
+	switch v := namespaces.(type) {
+	case string:
+		if v != "" {
+			nsList = []string{v}
+			fmt.Printf("Filtering flows for namespace: %s\n", v)
+		}
+	case []string:
+		nsList = v
+		if len(v) > 0 {
+			fmt.Printf("Filtering flows for namespaces: %s\n", strings.Join(v, ", "))
+		}
+	default:
 	}
-	fmt.Println("Press Ctrl+C to stop")
-	fmt.Println("Flow logging disabled - only baseline monitoring enabled")
+
 	fmt.Println(strings.Repeat("=", 80))
 
 	client := observer.NewObserverClient(c.conn)
@@ -373,15 +304,19 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 		Follow: true,
 	}
 
-	if namespace != "" {
-		req.Whitelist = []*observer.FlowFilter{
-			{
-				SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-			{
-				DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
+	if len(nsList) > 0 {
+		var filters []*observer.FlowFilter
+		for _, ns := range nsList {
+			filters = append(filters,
+				&observer.FlowFilter{
+					SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + ns},
+				},
+				&observer.FlowFilter{
+					DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + ns},
+				},
+			)
 		}
+		req.Whitelist = filters
 	}
 
 	stream, err := client.GetFlows(ctx, req)
@@ -423,17 +358,22 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 				}
 
 				if flowCounter != nil {
-					flowCounter(namespace)
+					flowNamespace := "unknown"
+					if flow.Source != nil && flow.Source.Namespace != "" {
+						flowNamespace = flow.Source.Namespace
+					} else if flow.Destination != nil && flow.Destination.Namespace != "" {
+						flowNamespace = flow.Destination.Namespace
+					}
+					flowCounter(flowNamespace)
 				}
 
-				// Process flow through processor for rule evaluation
 				if flowProcessor != nil {
 					flowProcessor(flow)
 				}
 			}
 
 			if time.Since(lastLogTime) >= 10*time.Second {
-				fmt.Printf("📊 Processed %d flows in the last 10 seconds\n", flowCount)
+				fmt.Printf(" Processed %d flows in the last 10 seconds\n", flowCount)
 				lastLogTime = time.Now()
 				flowCount = 0
 			}
@@ -441,13 +381,11 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 	}
 }
 
-// StreamFlowsWithMetrics streams flows from Hubble and records metrics
 func (c *HubbleGRPCClient) StreamFlowsWithMetrics(ctx context.Context, namespace string) error {
-	fmt.Println("🚀 Starting to stream flows from Hubble relay with metrics...")
+	fmt.Println("Starting to stream flows from Hubble relay with metrics...")
 	if namespace != "" {
-		fmt.Printf("📋 Filtering flows for namespace: %s\n", namespace)
+		fmt.Printf("Filtering flows for namespace: %s\n", namespace)
 	}
-	fmt.Println("Press Ctrl+C to stop")
 	fmt.Println(strings.Repeat("=", 80))
 
 	client := observer.NewObserverClient(c.conn)
@@ -529,15 +467,36 @@ func (c *HubbleGRPCClient) convertHubbleFlow(hubbleFlow *observer.Flow) *model.F
 		flow.Verdict = model.Verdict_DROPPED
 	case observer.Verdict_ERROR:
 		flow.Verdict = model.Verdict_ERROR
+	case observer.Verdict_AUDIT:
+		flow.Verdict = model.Verdict_AUDIT
+	case observer.Verdict_REDIRECTED:
+		flow.Verdict = model.Verdict_REDIRECTED
+	case observer.Verdict_TRACED:
+		flow.Verdict = model.Verdict_TRACED
+	case observer.Verdict_TRANSLATED:
+		flow.Verdict = model.Verdict_TRANSLATED
 	default:
 		flow.Verdict = model.Verdict_VERDICT_UNKNOWN
 	}
 
+	// Extract IP addresses
+	// GetSource() and GetDestination() should return string directly
 	if hubbleFlow.GetIP() != nil {
-		flow.IP = &model.IP{
-			Source:      hubbleFlow.GetIP().GetSource(),
-			Destination: hubbleFlow.GetIP().GetDestination(),
+		sourceIP := hubbleFlow.GetIP().GetSource()
+		destIP := hubbleFlow.GetIP().GetDestination()
+
+		// Debug: log if IP is empty
+		if sourceIP == "" || destIP == "" {
+			fmt.Printf("DEBUG: IP extraction - SourceIP: '%s', DestIP: '%s'\n", sourceIP, destIP)
 		}
+
+		// Always set IP (even if empty, to help with debugging)
+		flow.IP = &model.IP{
+			Source:      sourceIP,
+			Destination: destIP,
+		}
+	} else {
+		fmt.Printf("DEBUG: hubbleFlow.GetIP() is nil\n")
 	}
 
 	if hubbleFlow.GetL4() != nil {
@@ -639,7 +598,6 @@ func (c *HubbleGRPCClient) convertHubbleFlow(hubbleFlow *observer.Flow) *model.F
 	return flow
 }
 
-// GetMetrics returns the metrics instance
 func (c *HubbleGRPCClient) GetMetrics() *PrometheusMetrics {
 	return c.metrics
 }
