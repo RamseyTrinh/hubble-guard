@@ -7,7 +7,7 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090'] # Target Prometheus itself
   
-  - job_name: 'hubble-anomaly-detector'
+  - job_name: 'hubble-guard'
     static_configs:
       - targets: ['172.25.93.63:8080']
     scrape_interval: 15s

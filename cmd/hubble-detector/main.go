@@ -10,12 +10,12 @@ import (
 	"syscall"
 	"time"
 
-	"hubble-anomaly-detector/internal/alert"
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
-	"hubble-anomaly-detector/internal/pipeline"
-	"hubble-anomaly-detector/internal/rules"
-	"hubble-anomaly-detector/internal/utils"
+	"hubble-guard/internal/alert"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
+	"hubble-guard/internal/pipeline"
+	"hubble-guard/internal/rules"
+	"hubble-guard/internal/utils"
 
 	"github.com/sirupsen/logrus"
 )

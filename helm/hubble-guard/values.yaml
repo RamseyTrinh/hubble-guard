@@ -152,7 +152,7 @@ anomalyDetector:
   replicaCount: 1
   
   image:
-    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    repository: docker.io/ramseytrinh338/hubble-guard
     pullPolicy: IfNotPresent
     tag: "1.0.0"
   

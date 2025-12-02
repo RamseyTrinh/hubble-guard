@@ -3,8 +3,8 @@ package pipeline
 import (
 	"context"
 
-	"hubble-anomaly-detector/internal/model"
-	"hubble-anomaly-detector/internal/rules"
+	"hubble-guard/internal/model"
+	"hubble-guard/internal/rules"
 )
 
 type Processor struct {

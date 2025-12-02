@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"hubble-anomaly-detector/internal/client"
+	"hubble-guard/internal/client"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"

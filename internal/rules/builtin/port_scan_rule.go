@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	prommodel "github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"

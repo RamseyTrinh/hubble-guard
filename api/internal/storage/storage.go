@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	"github.com/sirupsen/logrus"
 )

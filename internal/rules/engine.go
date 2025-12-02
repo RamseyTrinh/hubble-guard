@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
 
 	"github.com/sirupsen/logrus"
 )

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	"github.com/cilium/cilium/api/v1/observer"
 	"google.golang.org/grpc"

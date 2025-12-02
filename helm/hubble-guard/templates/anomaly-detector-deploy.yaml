@@ -45,7 +45,7 @@ spec:
             {{- toYaml .Values.anomalyDetector.securityContext | nindent 12 }}
           image: "{{ .Values.anomalyDetector.image.repository }}:{{ .Values.anomalyDetector.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.anomalyDetector.image.pullPolicy }}
-          command: ["/app/hubble-anomaly-detector"]
+          command: ["/app/hubble-guard"]
           args:
             - "--config=/config/anomaly_detection.yaml"
           ports:

@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
-	"hubble-anomaly-detector/internal/rules"
-	"hubble-anomaly-detector/internal/rules/builtin"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
+	"hubble-guard/internal/rules"
+	"hubble-guard/internal/rules/builtin"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"

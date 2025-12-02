@@ -31,7 +31,7 @@ Một công cụ phát hiện bất thường mạng dựa trên dữ liệu flo
 
 ```bash
 go mod tidy
-go build -o hubble-anomaly-detector
+go build -o hubble-guard
 ```
 
 ## Sử dụng
@@ -39,13 +39,13 @@ go build -o hubble-anomaly-detector
 ### Chạy cơ bản
 
 ```bash
-./hubble-anomaly-detector
+./hubble-guard
 ```
 
 ### Với các tùy chọn
 
 ```bash
-./hubble-anomaly-detector \
+./hubble-guard \
   --hubble-server=localhost:4245 \
   --version
 ```
@@ -273,10 +273,10 @@ docker-compose down
 
 ```bash
 # Build image
-docker build -t hubble-anomaly-detector .
+docker build -t hubble-guard .
 
 # Chạy container
-docker run -it --rm hubble-anomaly-detector
+docker run -it --rm hubble-guard
 ```
 
 ## Kubernetes Deployment với Helm
@@ -313,7 +313,7 @@ application:
 
 anomalyDetector:
   image:
-    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    repository: docker.io/ramseytrinh338/hubble-guard
     tag: "1.0.0"
 
 grafana:

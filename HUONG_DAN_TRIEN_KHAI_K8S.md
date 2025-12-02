@@ -65,7 +65,7 @@ application:
 anomalyDetector:
   image:
     # Thay đổi registry nếu cần
-    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    repository: docker.io/ramseytrinh338/hubble-guard
     tag: "1.0.0"
   
   resources:

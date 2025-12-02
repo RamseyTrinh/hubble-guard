@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"hubble-anomaly-detector/api/internal/handlers"
-	"hubble-anomaly-detector/api/internal/storage"
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/utils"
+	"hubble-guard/api/internal/handlers"
+	"hubble-guard/api/internal/storage"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/utils"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"

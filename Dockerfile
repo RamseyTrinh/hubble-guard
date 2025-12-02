@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hubble-anomaly-detector ./cmd/hubble-detector
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hubble-guard ./cmd/hubble-detector
 
 # Final stage
 FROM alpine:latest
@@ -24,7 +24,7 @@ RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 
 # Copy binary from builder
-COPY --from=builder /build/hubble-anomaly-detector /app/hubble-anomaly-detector
+COPY --from=builder /build/hubble-guard /app/hubble-guard
 
 # Copy config file (optional, can be overridden by ConfigMap)
 COPY --from=builder /build/configs/anomaly_detection.yaml /app/configs/anomaly_detection.yaml
@@ -38,5 +38,5 @@ USER appuser
 
 EXPOSE 8080
 
-ENTRYPOINT ["/app/hubble-anomaly-detector"]
+ENTRYPOINT ["/app/hubble-guard"]
 

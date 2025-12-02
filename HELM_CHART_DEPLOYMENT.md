@@ -5,6 +5,8 @@
 Helm chart `hubble-guard` là một bộ công cụ hoàn chỉnh để triển khai hệ thống phát hiện anomaly mạng trên Kubernetes, bao gồm:
 
 - **Anomaly Detector**: Ứng dụng phân tích Hubble flows và phát hiện các bất thường
+- **API Server**: REST API và WebSocket server cung cấp dữ liệu cho UI
+- **UI**: Giao diện web (React) để hiển thị dashboard và flow viewer
 - **Prometheus**: Hệ thống thu thập và lưu trữ metrics
 - **Grafana**: Dashboard để trực quan hóa dữ liệu và metrics
 
@@ -26,6 +28,9 @@ helm/hubble-guard/
     ├── anomaly-detector-configmap.yaml    # ConfigMap cho Anomaly Detector
     ├── anomaly-detector-deploy.yaml       # Deployment cho Anomaly Detector
     ├── anomaly-detector-svc.yaml          # Service cho Anomaly Detector
+    ├── ui-deploy.yaml                     # Deployment cho UI
+    ├── ui-svc.yaml                       # Service cho UI
+    ├── ui-ingress.yaml                   # Ingress cho UI (optional)
     ├── prometheus-configmap.yaml          # ConfigMap cho Prometheus
     ├── prometheus-deploy.yaml             # Deployment cho Prometheus
     ├── prometheus-pvc.yaml                # PersistentVolumeClaim cho Prometheus
@@ -49,11 +54,12 @@ helm/hubble-guard/
 #### 2.3.1. Anomaly Detector
 
 **Deployment** (`anomaly-detector-deploy.yaml`):
-- Image: `docker.io/ramseytrinh338/hubble-anomaly-detector:1.0.0`
+- Image: `docker.io/ramseytrinh338/hubble-guard:1.0.0`
 - Port: 8080 (HTTP metrics endpoint)
 - ConfigMap: Chứa file cấu hình `anomaly_detection.yaml`
 - ServiceAccount: Được tạo tự động với quyền cần thiết
 - Health checks: Liveness và Readiness probes tại `/metrics`
+- Init Container: Chờ Prometheus sẵn sàng trước khi khởi động
 - Resources: 
   - Requests: 100m CPU, 128Mi memory
   - Limits: 1000m CPU, 512Mi memory
@@ -62,12 +68,37 @@ helm/hubble-guard/
 - Type: ClusterIP
 - Port: 8080
 - Selector: Chọn pods của Anomaly Detector
+- Được sử dụng bởi UI để kết nối API (hiện tại API Server có thể chạy cùng với detector)
 
 **ConfigMap** (`anomaly-detector-configmap.yaml`):
 - Chứa cấu hình từ `values.yaml` được chuyển đổi sang YAML
 - Mount tại `/config/anomaly_detection.yaml` trong container
 
-#### 2.3.2. Prometheus
+#### 2.3.2. UI (Web Interface)
+
+**Deployment** (`ui-deploy.yaml`):
+- Image: `docker.io/ramseytrinh338/hubble-ui:1.0.0`
+- Port: 80 (HTTP)
+- Environment Variables:
+  - `VITE_API_URL`: URL của API Server (trỏ đến Anomaly Detector service)
+  - `VITE_WS_URL`: WebSocket URL cho real-time updates
+- Resources:
+  - Requests: 50m CPU, 64Mi memory
+  - Limits: 200m CPU, 256Mi memory
+- Health checks: Liveness và Readiness probes tại `/`
+
+**Service** (`ui-svc.yaml`):
+- Type: ClusterIP (có thể đổi thành NodePort hoặc LoadBalancer)
+- Port: 80
+- Selector: Chọn pods của UI
+
+**Ingress** (`ui-ingress.yaml`):
+- Optional: Chỉ được tạo khi `ui.ingress.enabled: true`
+- Class: Có thể cấu hình (mặc định: nginx)
+- Hosts: Có thể cấu hình trong `values.yaml`
+- TLS: Hỗ trợ TLS termination
+
+#### 2.3.3. Prometheus
 
 **Deployment** (`prometheus-deploy.yaml`):
 - Image: `prom/prometheus:v3.7.3`
@@ -90,7 +121,7 @@ helm/hubble-guard/
 - Size: 10Gi (có thể cấu hình)
 - StorageClass: Có thể chỉ định hoặc dùng default
 
-#### 2.3.3. Grafana
+#### 2.3.4. Grafana
 
 **Deployment** (`grafana-deploy.yaml`):
 - Image: `grafana/grafana:11.0.0`
@@ -112,13 +143,13 @@ helm/hubble-guard/
 **PersistentVolumeClaim** (`grafana-pvc.yaml`):
 - Optional: Mặc định tắt, có thể bật để lưu trữ dữ liệu Grafana
 
-#### 2.3.4. Namespace
+#### 2.3.5. Namespace
 
 **Namespace** (`namespace.yaml`):
 - Tên: `hubble-guard`
 - Labels: Quản lý bởi Helm
 
-#### 2.3.5. ServiceAccount
+#### 2.3.6. ServiceAccount
 
 **ServiceAccount** (`serviceaccount.yaml`):
 - Được tạo cho Anomaly Detector
@@ -167,7 +198,36 @@ Chart hỗ trợ nhiều loại rules:
 - Webhook alerts
 - Email alerts
 
-### 3.4. Resources Configuration
+### 3.4. UI Configuration
+
+```yaml
+ui:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: docker.io/ramseytrinh338/hubble-ui
+    tag: "1.0.0"
+  service:
+    type: ClusterIP
+    port: 80
+  ingress:
+    enabled: false
+    className: "nginx"
+    hosts:
+      - host: hubble-ui.local
+        paths:
+          - path: /
+            pathType: Prefix
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+```
+
+### 3.5. Resources Configuration
 
 Mỗi component có thể cấu hình:
 - Replica count
@@ -241,12 +301,26 @@ application:
 
 anomalyDetector:
   image:
-    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
-    tag: "1.0.0"
+    repository: docker.io/ramseytrinh338/hubble-guard
+    tag: "latest"
   resources:
     limits:
       cpu: 2000m
       memory: 1Gi
+
+ui:
+  enabled: true
+  image:
+    repository: docker.io/ramseytrinh338/hubble-ui
+    tag: "latest"
+  ingress:
+    enabled: true
+    className: "nginx"
+    hosts:
+      - host: hubble-ui.example.com
+        paths:
+          - path: /
+            pathType: Prefix
 
 prometheus:
   persistence:
@@ -323,6 +397,9 @@ kubectl get pods -n hubble-guard
 # Xem logs của Anomaly Detector
 kubectl logs -n hubble-guard -l app.kubernetes.io/component=anomaly-detector
 
+# Xem logs của UI
+kubectl logs -n hubble-guard -l app.kubernetes.io/component=ui
+
 # Xem services
 kubectl get svc -n hubble-guard
 
@@ -372,6 +449,10 @@ kubectl delete namespace hubble-guard
 ### 6.1. Port Forwarding
 
 ```bash
+# UI
+kubectl port-forward -n hubble-guard svc/hubble-guard-ui 5000:80
+# Truy cập: http://localhost:5000
+
 # Prometheus
 kubectl port-forward -n hubble-guard svc/hubble-guard-prometheus 9090:9090
 # Truy cập: http://localhost:9090
@@ -380,29 +461,54 @@ kubectl port-forward -n hubble-guard svc/hubble-guard-prometheus 9090:9090
 kubectl port-forward -n hubble-guard svc/hubble-guard-grafana 3000:3000
 # Truy cập: http://localhost:3000 (admin/admin)
 
-# Anomaly Detector metrics
-kubectl port-forward -n hubble-guard svc/hubble-guard-anomaly-detector 8080:8080
-# Truy cập: http://localhost:8080/metrics
+# Anomaly Detector metrics / API Server
+kubectl port-forward -n hubble-guard svc/hubble-guard-anomaly-detector 5001:8080
+# Truy cập: 
+# - Metrics: http://localhost:5001/metrics
+# - API: http://localhost:5001/api/v1
 ```
 
 ### 6.2. Service URLs Trong Cluster
 
-- **Anomaly Detector**: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080`
+- **UI**: `http://hubble-guard-ui.hubble-guard.svc.cluster.local:80`
+- **Anomaly Detector / API Server**: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080`
+  - Metrics: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080/metrics`
+  - API: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080/api/v1`
 - **Prometheus**: `http://hubble-guard-prometheus.hubble-guard.svc.cluster.local:9090`
 - **Grafana**: `http://hubble-guard-grafana.hubble-guard.svc.cluster.local:3000`
 
 ### 6.3. Ingress (Nếu cần)
 
-Có thể thêm Ingress template để expose services ra ngoài:
+UI đã có sẵn Ingress template (`ui-ingress.yaml`). Để kích hoạt:
 
 ```yaml
-# templates/ingress.yaml
+# my-values.yaml
+ui:
+  ingress:
+    enabled: true
+    className: "nginx"
+    hosts:
+      - host: hubble-ui.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: hubble-ui-tls
+        hosts:
+          - hubble-ui.example.com
+```
+
+Có thể thêm Ingress cho Grafana nếu cần:
+
+```yaml
+# templates/grafana-ingress.yaml
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "hubble-guard.fullname" . }}-ingress
+  name: {{ include "hubble-guard.fullname" . }}-grafana-ingress
   namespace: hubble-guard
 spec:
+  ingressClassName: nginx
   rules:
     - host: grafana.example.com
       http:

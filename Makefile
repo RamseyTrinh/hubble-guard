@@ -3,7 +3,7 @@
 .PHONY: build run clean test deps help api-run api-build
 
 # Variables
-BINARY_NAME=hubble-anomaly-detector
+BINARY_NAME=hubble-guard
 BUILD_DIR=build
 VERSION=1.0.0
 DOCKER_REGISTRY=docker.io/ramseytrinh338
@@ -20,7 +20,7 @@ run-help:
 build:
 	@echo "Building $(BINARY_NAME)..."
 	@mkdir -p $(BUILD_DIR)
-	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/hubble-detector
+	@go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/hubble-guard
 	@echo "Build complete: $(BUILD_DIR)/$(BINARY_NAME)"
 
 # Run the application
@@ -88,9 +88,9 @@ lint:
 build-all:
 	@echo "Building for multiple platforms..."
 	@mkdir -p $(BUILD_DIR)
-	@GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/hubble-detector
-	@GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/hubble-detector
-	@GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/hubble-detector
+	@GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/hubble-guard
+	@GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/hubble-guard
+	@GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/hubble-guard
 	@echo "Multi-platform build complete"
 
 # Create release package
@@ -105,8 +105,8 @@ release: clean build-all
 # Docker build
 docker-build:
 	@echo "Building Docker image..."
-	@docker build -t hubble-anomaly-detector:$(VERSION) .
-	@echo "Docker image built: hubble-anomaly-detector:$(VERSION)"
+	@docker build -t hubble-guard:$(VERSION) .
+	@echo "Docker image built: hubble-guard:$(VERSION)"
 
 # Docker push (set DOCKER_REGISTRY env var)
 docker-push:
@@ -121,29 +121,29 @@ docker-push:
 	@echo "Logging in to registry $(DOCKER_REGISTRY)..."
 	@echo "$(DOCKER_PASSWORD)" | docker login $(DOCKER_REGISTRY) -u "$(DOCKER_USERNAME)" --password-stdin
 	@echo "Tagging and pushing image..."
-	@docker tag hubble-anomaly-detector:$(VERSION) $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)
-	@docker tag hubble-anomaly-detector:$(VERSION) $(DOCKER_REGISTRY)/hubble-anomaly-detector:latest
-	@docker push $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)
-	@docker push $(DOCKER_REGISTRY)/hubble-anomaly-detector:latest
-	@echo "Image pushed to $(DOCKER_REGISTRY)/hubble-anomaly-detector:$(VERSION)"
+	@docker tag hubble-guard:$(VERSION) $(DOCKER_REGISTRY)/hubble-guard:$(VERSION)
+	@docker tag hubble-guard:$(VERSION) $(DOCKER_REGISTRY)/hubble-guard:latest
+	@docker push $(DOCKER_REGISTRY)/hubble-guard:$(VERSION)
+	@docker push $(DOCKER_REGISTRY)/hubble-guard:latest
+	@echo "Image pushed to $(DOCKER_REGISTRY)/hubble-guard:$(VERSION)"
 
 # Helm lint
 helm-lint:
 	@echo "Linting Helm chart..."
-	@helm lint ./helm/hubble-anomaly-detector
+	@helm lint ./helm/hubble-guard
 	@echo "Helm lint complete"
 
 # Helm package
 helm-package:
 	@echo "Packaging Helm chart..."
-	@helm package ./helm/hubble-anomaly-detector
+	@helm package ./helm/hubble-guard
 	@echo "Helm chart packaged"
 
 # Helm install (set NAMESPACE env var, default: hubble)
 helm-install: helm-lint
 	@NAMESPACE=$${NAMESPACE:-hubble}; \
 	echo "Installing Helm chart to namespace $$NAMESPACE..."; \
-	helm install hubble-detector ./helm/hubble-anomaly-detector \
+	helm install hubble-guard ./helm/hubble-guard \
 		--namespace $$NAMESPACE \
 		--create-namespace
 
@@ -151,19 +151,19 @@ helm-install: helm-lint
 helm-upgrade: helm-lint
 	@NAMESPACE=$${NAMESPACE:-hubble}; \
 	echo "Upgrading Helm chart in namespace $$NAMESPACE..."; \
-	helm upgrade hubble-detector ./helm/hubble-anomaly-detector \
+	helm upgrade hubble-guard ./helm/hubble-guard \
 		--namespace $$NAMESPACE
 
 # Helm uninstall
 helm-uninstall:
 	@NAMESPACE=$${NAMESPACE:-hubble}; \
 	echo "Uninstalling Helm chart from namespace $$NAMESPACE..."; \
-	helm uninstall hubble-detector --namespace $$NAMESPACE
+	helm uninstall hubble-guard --namespace $$NAMESPACE
 
 # Helm template (dry-run)
 helm-template:
 	@echo "Rendering Helm templates..."
-	@helm template hubble-detector ./helm/hubble-anomaly-detector
+	@helm template hubble-guard ./helm/hubble-guard
 
 # Show help
 help:
