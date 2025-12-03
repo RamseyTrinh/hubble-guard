@@ -13,9 +13,6 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build the detector application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hubble-guard ./cmd/hubble-guard
-
 # Build the API server application
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o hubble-guard-api ./api
 
@@ -26,8 +23,7 @@ RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-# Copy binaries from builder
-COPY --from=builder /build/hubble-guard /app/hubble-guard
+# Copy binary from builder
 COPY --from=builder /build/hubble-guard-api /app/hubble-guard-api
 
 # Copy config file (optional, can be overridden by ConfigMap)
@@ -40,8 +36,7 @@ RUN addgroup -g 1000 appuser && \
 
 USER appuser
 
-EXPOSE 8080 5001
+EXPOSE 5001
 
-# Default entrypoint is detector, but can be overridden
-ENTRYPOINT ["/app/hubble-guard"]
+ENTRYPOINT ["/app/hubble-guard-api"]
 

@@ -195,6 +195,55 @@ anomalyDetector:
     annotations: {}
     name: ""
 
+# API Server configuration
+apiServer:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: docker.io/ramseytrinh338/hubble-guard-api
+    pullPolicy: IfNotPresent
+    tag: "1.0.0"
+  
+  imagePullSecrets: []
+  
+  podAnnotations: {}
+  
+  podSecurityContext: {}
+  
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+      - ALL
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  nodeSelector: {}
+  
+  tolerations: []
+  
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 5001
+    annotations: {}
+  
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
 # Prometheus configuration
 prometheus:
   replicaCount: 1
@@ -292,7 +341,7 @@ ui:
   replicaCount: 1
   
   image:
-    repository: docker.io/ramseytrinh338/hubble-ui
+    repository: docker.io/ramseytrinh338/hubble-guard-ui
     tag: "1.0.0"
     pullPolicy: IfNotPresent
   
@@ -328,7 +377,7 @@ ui:
     className: "nginx"
     annotations: {}
     hosts:
-      - host: hubble-ui.local
+      - host: hubble-guard-ui.local
         paths:
           - path: /
             pathType: Prefix

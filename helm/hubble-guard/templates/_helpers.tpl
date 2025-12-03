@@ -153,3 +153,26 @@ Anomaly Detector service name
 {{- printf "%s-anomaly-detector" (include "hubble-guard.fullname" .) }}
 {{- end }}
 
+{{/*
+API Server labels
+*/}}
+{{- define "hubble-guard.apiServer.labels" -}}
+{{ include "hubble-guard.labels" . }}
+app.kubernetes.io/component: api-server
+{{- end }}
+
+{{/*
+API Server selector labels
+*/}}
+{{- define "hubble-guard.apiServer.selectorLabels" -}}
+{{ include "hubble-guard.selectorLabels" . }}
+app.kubernetes.io/component: api-server
+{{- end }}
+
+{{/*
+API Server service name
+*/}}
+{{- define "hubble-guard.apiServer.serviceName" -}}
+{{- printf "%s-api-server" (include "hubble-guard.fullname" .) }}
+{{- end }}
+

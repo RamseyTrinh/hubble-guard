@@ -39,13 +39,13 @@ Output sẽ ở trong thư mục `dist/`
 ## Bước 5: Build Docker image
 
 ```bash
-docker build -t hubble-ui:1.0.0 .
+docker build -t hubble-guard-ui:1.0.0 .
 ```
 
 ## Bước 6: Test Docker image
 
 ```bash
-docker run -p 5000:80 hubble-ui:1.0.0
+docker run -p 5000:80 hubble-guard-ui:1.0.0
 ```
 
 Truy cập `http://localhost:5000`

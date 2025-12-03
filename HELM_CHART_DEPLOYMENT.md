@@ -28,6 +28,8 @@ helm/hubble-guard/
     ├── anomaly-detector-configmap.yaml    # ConfigMap cho Anomaly Detector
     ├── anomaly-detector-deploy.yaml       # Deployment cho Anomaly Detector
     ├── anomaly-detector-svc.yaml          # Service cho Anomaly Detector
+    ├── api-server-deploy.yaml             # Deployment cho API Server
+    ├── api-server-svc.yaml               # Service cho API Server
     ├── ui-deploy.yaml                     # Deployment cho UI
     ├── ui-svc.yaml                       # Service cho UI
     ├── ui-ingress.yaml                   # Ingress cho UI (optional)
@@ -74,13 +76,38 @@ helm/hubble-guard/
 - Chứa cấu hình từ `values.yaml` được chuyển đổi sang YAML
 - Mount tại `/config/anomaly_detection.yaml` trong container
 
-#### 2.3.2. UI (Web Interface)
+#### 2.3.2. API Server
+
+**Deployment** (`api-server-deploy.yaml`):
+- Image: `docker.io/ramseytrinh338/hubble-guard:1.0.0` (cùng image với detector, chứa cả 2 binaries)
+- Binary: `/app/hubble-guard-api` (API server binary)
+- Port: 5001 (HTTP API endpoints)
+- ConfigMap: Chứa file cấu hình `anomaly_detection.yaml` (dùng chung với detector)
+- ServiceAccount: Dùng chung với Anomaly Detector
+- Init Container: Chờ Prometheus sẵn sàng trước khi khởi động
+- Health checks: Liveness và Readiness probes tại `/health`
+- Resources:
+  - Requests: 100m CPU, 128Mi memory
+  - Limits: 500m CPU, 512Mi memory
+
+**Service** (`api-server-svc.yaml`):
+- Type: ClusterIP
+- Port: 5001
+- Selector: Chọn pods của API Server
+- Được sử dụng bởi UI để kết nối API endpoints
+
+**API Endpoints:**
+- REST API: `/api/v1/flows`, `/api/v1/alerts`, `/api/v1/rules`, `/api/v1/metrics`
+- WebSocket: `/api/v1/stream/flows`, `/api/v1/stream/alerts`
+- Health: `/health`
+
+#### 2.3.3. UI (Web Interface)
 
 **Deployment** (`ui-deploy.yaml`):
-- Image: `docker.io/ramseytrinh338/hubble-ui:1.0.0`
+- Image: `docker.io/ramseytrinh338/hubble-guard-ui:1.0.0`
 - Port: 80 (HTTP)
 - Environment Variables:
-  - `VITE_API_URL`: URL của API Server (trỏ đến Anomaly Detector service)
+  - `VITE_API_URL`: URL của API Server (trỏ đến API Server service)
   - `VITE_WS_URL`: WebSocket URL cho real-time updates
 - Resources:
   - Requests: 50m CPU, 64Mi memory
@@ -98,7 +125,7 @@ helm/hubble-guard/
 - Hosts: Có thể cấu hình trong `values.yaml`
 - TLS: Hỗ trợ TLS termination
 
-#### 2.3.3. Prometheus
+#### 2.3.4. Prometheus
 
 **Deployment** (`prometheus-deploy.yaml`):
 - Image: `prom/prometheus:v3.7.3`
@@ -121,7 +148,7 @@ helm/hubble-guard/
 - Size: 10Gi (có thể cấu hình)
 - StorageClass: Có thể chỉ định hoặc dùng default
 
-#### 2.3.4. Grafana
+#### 2.3.5. Grafana
 
 **Deployment** (`grafana-deploy.yaml`):
 - Image: `grafana/grafana:11.0.0`
@@ -143,13 +170,13 @@ helm/hubble-guard/
 **PersistentVolumeClaim** (`grafana-pvc.yaml`):
 - Optional: Mặc định tắt, có thể bật để lưu trữ dữ liệu Grafana
 
-#### 2.3.5. Namespace
+#### 2.3.6. Namespace
 
 **Namespace** (`namespace.yaml`):
 - Tên: `hubble-guard`
 - Labels: Quản lý bởi Helm
 
-#### 2.3.6. ServiceAccount
+#### 2.3.7. ServiceAccount
 
 **ServiceAccount** (`serviceaccount.yaml`):
 - Được tạo cho Anomaly Detector
@@ -198,14 +225,36 @@ Chart hỗ trợ nhiều loại rules:
 - Webhook alerts
 - Email alerts
 
-### 3.4. UI Configuration
+### 3.4. API Server Configuration
+
+```yaml
+apiServer:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: docker.io/ramseytrinh338/hubble-guard
+    tag: "1.0.0"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 5001
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+```
+
+### 3.5. UI Configuration
 
 ```yaml
 ui:
   enabled: true
   replicaCount: 1
   image:
-    repository: docker.io/ramseytrinh338/hubble-ui
+    repository: docker.io/ramseytrinh338/hubble-guard-ui
     tag: "1.0.0"
   service:
     type: ClusterIP
@@ -227,7 +276,7 @@ ui:
       memory: 64Mi
 ```
 
-### 3.5. Resources Configuration
+### 3.6. Resources Configuration
 
 Mỗi component có thể cấu hình:
 - Replica count
@@ -308,10 +357,20 @@ anomalyDetector:
       cpu: 2000m
       memory: 1Gi
 
+apiServer:
+  enabled: true
+  image:
+    repository: docker.io/ramseytrinh338/hubble-guard
+    tag: "latest"
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
 ui:
   enabled: true
   image:
-    repository: docker.io/ramseytrinh338/hubble-ui
+    repository: docker.io/ramseytrinh338/hubble-guard-ui
     tag: "latest"
   ingress:
     enabled: true
@@ -397,6 +456,9 @@ kubectl get pods -n hubble-guard
 # Xem logs của Anomaly Detector
 kubectl logs -n hubble-guard -l app.kubernetes.io/component=anomaly-detector
 
+# Xem logs của API Server
+kubectl logs -n hubble-guard -l app.kubernetes.io/component=api-server
+
 # Xem logs của UI
 kubectl logs -n hubble-guard -l app.kubernetes.io/component=ui
 
@@ -461,19 +523,25 @@ kubectl port-forward -n hubble-guard svc/hubble-guard-prometheus 9090:9090
 kubectl port-forward -n hubble-guard svc/hubble-guard-grafana 3000:3000
 # Truy cập: http://localhost:3000 (admin/admin)
 
-# Anomaly Detector metrics / API Server
-kubectl port-forward -n hubble-guard svc/hubble-guard-anomaly-detector 5001:8080
+# Anomaly Detector metrics
+kubectl port-forward -n hubble-guard svc/hubble-guard-anomaly-detector 8080:8080
+# Truy cập: http://localhost:8080/metrics
+
+# API Server
+kubectl port-forward -n hubble-guard svc/hubble-guard-api-server 5001:5001
 # Truy cập: 
-# - Metrics: http://localhost:5001/metrics
 # - API: http://localhost:5001/api/v1
+# - Health: http://localhost:5001/health
 ```
 
 ### 6.2. Service URLs Trong Cluster
 
 - **UI**: `http://hubble-guard-ui.hubble-guard.svc.cluster.local:80`
-- **Anomaly Detector / API Server**: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080`
+- **Anomaly Detector**: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080`
   - Metrics: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080/metrics`
-  - API: `http://hubble-guard-anomaly-detector.hubble-guard.svc.cluster.local:8080/api/v1`
+- **API Server**: `http://hubble-guard-api-server.hubble-guard.svc.cluster.local:5001`
+  - API: `http://hubble-guard-api-server.hubble-guard.svc.cluster.local:5001/api/v1`
+  - Health: `http://hubble-guard-api-server.hubble-guard.svc.cluster.local:5001/health`
 - **Prometheus**: `http://hubble-guard-prometheus.hubble-guard.svc.cluster.local:9090`
 - **Grafana**: `http://hubble-guard-grafana.hubble-guard.svc.cluster.local:3000`
 
@@ -543,13 +611,27 @@ kubectl get configmap -n hubble-guard -o yaml
 - Đảm bảo Hubble Relay service đang chạy
 - Kiểm tra network policies
 
-### 7.3. Prometheus Không Scrape Được Metrics
+### 7.3. API Server Không Khởi Động
+
+- Kiểm tra logs: `kubectl logs -n hubble-guard -l app.kubernetes.io/component=api-server`
+- Kiểm tra ConfigMap có được mount đúng không
+- Kiểm tra Prometheus đã sẵn sàng chưa (init container)
+- Kiểm tra health endpoint: `curl http://<api-server-pod-ip>:5001/health`
+
+### 7.4. UI Không Kết Nối Được API Server
+
+- Kiểm tra `VITE_API_URL` và `VITE_WS_URL` trong UI pod env
+- Kiểm tra API Server service có đang chạy không
+- Kiểm tra network policies giữa UI và API Server
+- Test API endpoint: `curl http://hubble-guard-api-server.hubble-guard.svc.cluster.local:5001/health`
+
+### 7.5. Prometheus Không Scrape Được Metrics
 
 - Kiểm tra Prometheus config trong ConfigMap
 - Xem targets trong Prometheus UI: Status > Targets
 - Kiểm tra service selector
 
-### 7.4. Grafana Không Hiển Thị Dashboard
+### 7.6. Grafana Không Hiển Thị Dashboard
 
 - Kiểm tra datasource provisioning
 - Kiểm tra dashboard ConfigMap

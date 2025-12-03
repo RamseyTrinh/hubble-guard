@@ -111,7 +111,7 @@ hubble-guard/
 
 ### 3.2.2.1. Entry Point (main.go)
 
-**Vị trí:** `cmd/hubble-detector/main.go`
+**Vị trí:** `cmd/hubble-guard/main.go`
 
 **Chức năng:**
 - Khởi tạo và cấu hình hệ thống
@@ -120,246 +120,233 @@ hubble-guard/
 - Đăng ký các rules và notifiers
 - Bắt đầu luồng thu thập và xử lý dữ liệu
 
-**Điểm quan trọng cần trình bày:**
+**Điểm quan trọng:**
+- Load cấu hình từ YAML với validation và fallback về default config
+- Khởi tạo Prometheus exporter để expose metrics
+- Khởi tạo Hubble client với metrics integration
+- Đăng ký rules từ YAML config, mỗi rule có thể chạy real-time hoặc query Prometheus định kỳ
 
-#### 1. Khởi tạo và Load cấu hình từ YAML
+### 3.2.2.2. API Server (api/main.go)
+
+**Vị trí:** `api/main.go`
+
+**Chức năng:**
+- Cung cấp REST API endpoints cho UI
+- WebSocket streaming cho real-time updates
+- In-memory storage cho flows, alerts, rules
+- Kết nối với Hubble để stream flows cho UI
+
+**Kiến trúc API Server:**
 
 ```go
-// Load cấu hình từ file YAML
-config, err := utils.LoadAnomalyDetectionConfig(*configFile)
-if err != nil {
-    fmt.Printf("Failed to load YAML config %s: %v\n", *configFile, err)
-    fmt.Println("Using default configuration...")
-    config = utils.GetDefaultAnomalyDetectionConfig()
-} else {
-    fmt.Printf(" Loaded configuration from %s\n", *configFile)
-}
+// Khởi tạo in-memory storage
+store := storage.NewStorage(logger)
 
-// Hàm LoadAnomalyDetectionConfig thực hiện:
-func LoadAnomalyDetectionConfig(filename string) (*AnomalyDetectionConfig, error) {
-    if filename == "" {
-        filename = "configs/anomaly_detection.yaml"
-    }
-    
-    data, err := os.ReadFile(filename)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read config file %s: %v", filename, err)
-    }
-    
-    var config AnomalyDetectionConfig
-    if err := yaml.Unmarshal(data, &config); err != nil {
-        return nil, fmt.Errorf("failed to parse YAML config file %s: %v", filename, err)
-    }
-    
-    if err := config.Validate(); err != nil {
-        return nil, fmt.Errorf("invalid config: %v", err)
-    }
-    
-    return &config, nil
-}
+// Khởi tạo Flow Broadcaster (stream flows qua WebSocket)
+handlers.InitFlowBroadcaster(hubbleClient, store, config, logger, sharedMetrics)
+
+// Tạo HTTP handlers
+h := handlers.NewHandlers(store, config, logger, promClient)
+
+// Setup router với REST API endpoints
+api := router.PathPrefix("/api/v1").Subrouter()
+api.HandleFunc("/flows", h.GetFlows).Methods("GET")
+api.HandleFunc("/alerts", h.GetAlerts).Methods("GET")
+api.HandleFunc("/rules", h.GetRules).Methods("GET")
+api.HandleFunc("/stream/flows", h.StreamFlows).Methods("GET")  // WebSocket
+api.HandleFunc("/stream/alerts", h.StreamAlerts).Methods("GET") // WebSocket
 ```
 
-#### 2. Khởi tạo Hubble Client
+**Các API Endpoints chính:**
+
+1. **Flows API:**
+   - `GET /api/v1/flows` - Lấy danh sách flows với pagination và filter
+   - `GET /api/v1/flows/{id}` - Chi tiết flow
+   - `GET /api/v1/flows/stats` - Thống kê flows
+   - `WS /api/v1/stream/flows` - WebSocket stream flows real-time
+
+2. **Alerts API:**
+   - `GET /api/v1/alerts` - Lấy danh sách alerts với filter
+   - `GET /api/v1/alerts/{id}` - Chi tiết alert
+   - `GET /api/v1/alerts/timeline` - Timeline alerts
+   - `WS /api/v1/stream/alerts` - WebSocket stream alerts real-time
+
+3. **Rules API:**
+   - `GET /api/v1/rules` - Lấy danh sách rules
+   - `GET /api/v1/rules/{id}` - Chi tiết rule
+   - `PUT /api/v1/rules/{id}` - Cập nhật rule (enable/disable, severity)
+   - `GET /api/v1/rules/stats` - Thống kê rules
+
+4. **Metrics API:**
+   - `GET /api/v1/metrics/prometheus/stats` - Metrics tổng quan từ Prometheus
+   - `GET /api/v1/metrics/prometheus/dropped-flows/timeseries` - Time series dropped flows
+   - `GET /api/v1/metrics/prometheus/alert-types` - Thống kê alert types
+
+**Flow Broadcaster (WebSocket):**
 
 ```go
-// Khởi tạo Prometheus exporter trước để có metrics
-exporter, err := alert.StartPrometheusExporterWithCustomRegistry(prometheusPort, logger)
-if err != nil {
-    fmt.Printf("Failed to create Prometheus exporter: %v\n", err)
-    os.Exit(1)
+// FlowBroadcaster stream flows từ Hubble đến tất cả WebSocket clients
+type FlowBroadcaster struct {
+    clients      map[*websocket.Conn]bool
+    hubbleClient *client.HubbleGRPCClient
+    store        *storage.Storage
 }
 
-// Khởi tạo Hubble client với metrics
-import (
-    "github.com/cilium/cilium/api/v1/observer"
-    "google.golang.org/grpc"
-    "google.golang.org/grpc/credentials/insecure"
-)
-
-// Hàm NewHubbleGRPCClientWithMetrics:
-func NewHubbleGRPCClientWithMetrics(server string, metrics *PrometheusMetrics) 
-(*HubbleGRPCClient, error) {
-    conn, err := grpc.Dial(
-        server, 
-        grpc.WithTransportCredentials(insecure.NewCredentials())
-    )
-    if err != nil {
-        return nil, fmt.Errorf("failed to connect to Hubble server: %v", err)
-    }
-    
-    return &HubbleGRPCClient{
-        conn:    conn,
-        server:  server,
-        metrics: metrics,
-    }, nil
-}
-```
-
-#### 3. Khởi tạo Prometheus Client
-
-```go
-// Khởi tạo Prometheus client để query metrics
-promClient, err := client.NewPrometheusClient(config.Prometheus.URL)
-if err != nil {
-    fmt.Printf("Failed to create Prometheus client: %v\n", err)
-    promClient = nil
-}
-
-// Hàm NewPrometheusClient:
-func NewPrometheusClient(url string) (*PrometheusClient, error) {
-    promClient, err := api.NewClient(api.Config{
-        Address: url,
-    })
-    if err != nil {
-        return nil, fmt.Errorf("failed to create Prometheus client: %v", err)
-    }
-    
-    v1API := v1.NewAPI(promClient)
-    return &PrometheusClient{
-        client: v1API,
-        url:    url,
-    }, nil
-}
-```
-
-#### 4. Kiểu dữ liệu PrometheusMetrics (Metrics Collector)
-
-```go
-type PrometheusMetrics struct {
-    // Flow metrics
-    FlowTotal         *prometheus.CounterVec
-    FlowByVerdict     *prometheus.CounterVec
-    FlowByProtocol    *prometheus.CounterVec
-    FlowByNamespace   *prometheus.CounterVec
-    FlowBySource      *prometheus.CounterVec
-    FlowByDestination *prometheus.CounterVec
-    
-    // TCP metrics
-    TCPConnections *prometheus.CounterVec
-    TCPFlags       *prometheus.CounterVec
-    TCPBytes       *prometheus.CounterVec
-    
-    // UDP metrics
-    UDPPackets *prometheus.CounterVec
-    UDPBytes   *prometheus.CounterVec
-    
-    // L7 metrics
-    L7Requests *prometheus.CounterVec
-    L7ByType   *prometheus.CounterVec
-    
-    // Error metrics
-    FlowErrors       *prometheus.CounterVec
-    ConnectionErrors *prometheus.CounterVec
-    
-    // Performance metrics
-    FlowProcessingTime *prometheus.HistogramVec
-    ActiveConnections  *prometheus.GaugeVec
-    
-    // Anomaly detection metrics
-    BaselineTrafficRate    *prometheus.GaugeVec
-    TrafficSpikeMultiplier *prometheus.GaugeVec
-    NewDestinations        *prometheus.CounterVec
-    ErrorResponseRate      *prometheus.CounterVec
-    TCPResetRate           *prometheus.CounterVec
-    TCPDropRate            *prometheus.CounterVec
-    PortScanDistinctPorts  *prometheus.GaugeVec
-    NamespaceAccess        *prometheus.CounterVec
-    SuspiciousOutbound     *prometheus.CounterVec
-    
-    // Port scan tracking
-    portScanTracker *portScanTracker
-}
-```
-
-#### 5. Khởi tạo và Đăng ký Rules
-
-```go
-// Khởi tạo Rule Engine
-engine := rules.NewEngine(logger)
-
-// Đăng ký các built-in rules từ YAML config
-utils.RegisterBuiltinRulesFromYAML(engine, config, logger, promClient)
-
-// Hàm RegisterBuiltinRulesFromYAML:
-func RegisterBuiltinRulesFromYAML(
-    engine *rules.Engine, 
-    yamlConfig *AnomalyDetectionConfig, 
-    logger *logrus.Logger, 
-    promClient *client.PrometheusClient) {
-    
-    thresholds := ruleConfig.Thresholds["multiplier"].(float64)
-
-    ddosRule := builtin.NewDDoSRule(
-        ruleConfig.Enabled, 
-        ruleConfig.Severity, 
-        threshold, 
-        logger)
-    ddosRule.SetAlertEmitter(func(alert *model.Alert) {
-        engine.EmitAlert(*alert)
-    })
-    engine.RegisterRule(ddosRule)
-    logger.Infof(
-        "Registered rule: %s (threshold: %.2fx)", 
-        ruleConfig.Name, 
-        threshold)
-
-    }
-
-
-        case "traffic_spike":
-            if promClient != nil {
-                threshold := 3.0
-                if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
-                    threshold = thresholds
-                }
-                
-                promRule := builtin.NewTrafficSpikeRule(ruleConfig.Enabled, ruleConfig.Severity, 
-                    threshold, promClient, logger)
-                promRule.SetNamespaces(yamlConfig.Namespaces)
-                promRule.SetAlertEmitter(func(alert *model.Alert) {
-                    engine.EmitAlert(*alert)
-                })
-                engine.RegisterRule(promRule)
-                ctx := context.Background()
-                go promRule.Start(ctx)  // Chạy rule trong goroutine riêng
-                logger.Infof("Registered rule: %s (threshold: %.2fx)", ruleConfig.Name, threshold)
-            }
-        
-        // ... các rules khác (port_scan, block_connection, namespace_access, ...)
-        }
+// Một gRPC stream duy nhất cho tất cả WebSocket clients
+func (fb *FlowBroadcaster) run() {
+    stream := fb.hubbleClient.GetFlows(ctx, req)
+    for {
+        flow := stream.Recv()
+        fb.store.AddFlow(flow)  // Lưu vào storage
+        fb.broadcastToClients(flow)  // Broadcast đến WebSocket clients
     }
 }
 ```
-
-
-```go
-func (e *Engine) EmitAlert(alert model.Alert) {
-    // Gửi vào channel
-    select {
-    case e.alertChannel <- alert:
-    default:
-        e.logger.Error("Alert channel is full, dropping alert")
-    }
-    // Gửi đến notifiers
-    for _, notifier := range notifiers {
-        if err := notifier.SendAlert(alert); err != nil {
-            e.logger.Errorf("Failed to send alert: %v", err)
-        }
-    }
-}
-```
-
-
-
 
 **Giải thích:**
-- **Load YAML**: Hệ thống đọc và parse file YAML, validate cấu hình, có fallback về default config nếu lỗi
-- **Hubble Client**: Kết nối gRPC đến Hubble Relay, tích hợp với Prometheus metrics để ghi lại flows
-- **Prometheus Client**: Tạo client để query metrics từ Prometheus server, hỗ trợ các rules dựa trên Prometheus
-- **PrometheusMetrics**: Struct chứa tất cả các metrics Prometheus (Counter, Gauge, Histogram) cho flow tracking và anomaly detection
-- **Rule Registration**: Đọc cấu hình từ YAML, khởi tạo từng rule tương ứng, đăng ký vào engine. Rules có thể chạy real-time (ddos) hoặc query Prometheus định kỳ (traffic_spike)
+- API Server chạy độc lập với detector, có Hubble Client riêng để stream flows
+- Sử dụng in-memory storage để lưu flows, alerts, rules (tối đa 50k flows, 10k alerts)
+- FlowBroadcaster quản lý một gRPC stream duy nhất và broadcast đến nhiều WebSocket clients
+- REST API cung cấp CRUD operations, WebSocket cung cấp real-time updates
 
-### 3.2.2.2. Hubble Client (hubble_client.go)
+### 3.2.2.3. UI (Web Interface)
+
+**Vị trí:** `ui/src/`
+
+**Công nghệ:**
+- **Framework**: React 18+ với JavaScript
+- **Build tool**: Vite
+- **UI Library**: Material-UI (MUI)
+- **State Management**: Zustand
+- **API Client**: Axios
+- **Charts**: Recharts
+- **Routing**: React Router
+
+**Cấu trúc UI:**
+
+```
+ui/src/
+├── App.jsx              # Main React component với routing
+├── main.jsx             # Entry point
+├── components/          # React components
+│   ├── Layout.jsx       # Layout với navigation sidebar
+│   └── GrafanaEmbed.jsx # Embed Grafana dashboard
+├── pages/               # Page components
+│   ├── Dashboard.jsx    # Dashboard page - hiển thị metrics, alerts
+│   └── FlowViewer.jsx   # Flow viewer page - hiển thị flows
+├── services/            # API services
+│   └── api.js           # API client (REST + WebSocket)
+└── store/               # State management
+    └── useStore.js      # Zustand store
+```
+
+**Các tính năng chính:**
+
+1. **Dashboard Page (`Dashboard.jsx`):**
+   - Hiển thị metrics tổng quan: total flows, alerts, rules
+   - Biểu đồ traffic theo thời gian (LineChart)
+   - Phân bổ flows theo namespace, verdict (PieChart)
+   - Embed Grafana dashboard
+   - Real-time updates qua WebSocket
+
+2. **Flow Viewer Page (`FlowViewer.jsx`):**
+   - Bảng flows với pagination
+   - Filter flows theo namespace, verdict, search
+   - Chi tiết từng flow
+   - Export flows
+
+3. **API Client (`services/api.js`):**
+   - Axios instance với base URL từ environment variable
+   - Các API methods: `flowsAPI`, `alertsAPI`, `rulesAPI`, `metricsAPI`
+   - WebSocket helper: `createWebSocket()`
+
+**Code quan trọng:**
+
+```javascript
+// API Client
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v1'
+const WS_BASE_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:5001/api/v1'
+
+export const flowsAPI = {
+  getAll: (params = {}) => api.get('/flows', { params }),
+  getStats: () => api.get('/flows/stats'),
+}
+
+// WebSocket connection
+export const createWebSocket = (endpoint) => {
+  const wsUrl = `${WS_BASE_URL}${endpoint}`
+  return new WebSocket(wsUrl)
+}
+```
+
+**Real-time Updates:**
+
+```javascript
+// Trong Dashboard component
+useEffect(() => {
+  const ws = createWebSocket('/stream/alerts')
+  ws.onmessage = (event) => {
+    const alert = JSON.parse(event.data)
+    // Update UI với alert mới
+    updateAlerts(alert)
+  }
+  return () => ws.close()
+}, [])
+```
+
+**Tương tác với API Server:**
+
+```javascript
+// 1. REST API calls
+const fetchFlows = async () => {
+  const response = await flowsAPI.getAll({ 
+    page: 1, 
+    limit: 25, 
+    namespace: 'default' 
+  })
+  setFlows(response.data)
+}
+
+// 2. WebSocket cho real-time updates
+useEffect(() => {
+  const ws = createWebSocket('/stream/alerts')
+  
+  ws.onopen = () => {
+    console.log('WebSocket connected')
+  }
+  
+  ws.onmessage = (event) => {
+    const alert = JSON.parse(event.data)
+    // Update state với alert mới
+    addAlert(alert)
+  }
+  
+  ws.onerror = (error) => {
+    console.error('WebSocket error:', error)
+  }
+  
+  ws.onclose = () => {
+    console.log('WebSocket disconnected')
+    // Reconnect logic có thể thêm ở đây
+  }
+  
+  return () => {
+    ws.close()
+  }
+}, [])
+```
+
+**Giải thích:**
+- UI là Single Page Application (SPA) với React Router
+- Giao tiếp với API Server qua REST API và WebSocket
+- Environment variables (`VITE_API_URL`, `VITE_WS_URL`) để cấu hình API endpoint
+- Material-UI cung cấp components và theme
+- Zustand quản lý global state (alerts, flows, rules)
+- WebSocket tự động reconnect khi mất kết nối
+- REST API được sử dụng cho initial load và pagination
+- WebSocket được sử dụng cho real-time updates (alerts, flows)
+
+### 3.2.2.4. Hubble Client (hubble_client.go)
 
 **Vị trí:** `internal/client/hubble_client.go`
 
@@ -399,7 +386,7 @@ if flow != nil {
 - Filter flows theo namespace để giảm tải xử lý
 - Tách biệt conversion logic để dễ maintain và test
 
-### 3.2.2.3. Metrics Collector (metrics_collector.go)
+### 3.2.2.5. Metrics Collector (metrics_collector.go)
 
 **Vị trí:** `internal/client/metrics_collector.go`
 
@@ -427,7 +414,7 @@ hubble_tcp_drops_total{namespace, source_ip, destination_ip}
 - Sử dụng Counter, Gauge, Histogram phù hợp với từng loại metric
 - Port scan tracking sử dụng time-windowed tracking (10 giây)
 
-### 3.2.2.4. Rule Engine (engine.go)
+### 3.2.2.6. Rule Engine (engine.go)
 
 **Vị trí:** `internal/rules/engine.go`
 
@@ -460,101 +447,146 @@ type RuleInterface interface {
 - Thread-safe với mutex để bảo vệ shared state
 - Alert channel để decouple rule evaluation và alert delivery
 
----
+### 3.2.2.7. Tương tác giữa UI và API Server
 
+**Kiến trúc giao tiếp:**
 
-### 3.2.2.5. Quy trình đăng ký Rules từ YAML
+```
+┌─────────────┐                    ┌──────────────┐
+│     UI      │                    │  API Server  │
+│  (React)    │                    │    (Go)     │
+└──────┬──────┘                    └──────┬───────┘
+       │                                  │
+       │ 1. REST API (Initial Load)      │
+       ├─────────────────────────────────►│
+       │  GET /api/v1/flows              │
+       │  GET /api/v1/alerts              │
+       │  GET /api/v1/rules               │
+       │                                  │
+       │ 2. WebSocket (Real-time)        │
+       ├─────────────────────────────────►│
+       │  WS /api/v1/stream/alerts       │
+       │  WS /api/v1/stream/flows        │
+       │                                  │
+       │ 3. REST API (Actions)           │
+       ├─────────────────────────────────►│
+       │  PUT /api/v1/rules/{id}         │
+       │                                  │
+       │◄─────────────────────────────────┤
+       │  Response (JSON)                │
+       │  WebSocket Messages (JSON)      │
+       │                                  │
+```
 
-**Vị trí:** `internal/utils/config_loader.go`
+**Các pattern giao tiếp:**
 
-Hệ thống đọc cấu hình từ file YAML và tự động đăng ký các rules tương ứng. Quy trình bao gồm:
+1. **Initial Data Load (REST API):**
+   - UI gọi REST API khi component mount để lấy dữ liệu ban đầu
+   - Sử dụng pagination để giảm tải
+   - Có thể filter và search
 
-**Bước 1: Đọc cấu hình từ file YAML**
+2. **Real-time Updates (WebSocket):**
+   - UI kết nối WebSocket sau khi load dữ liệu ban đầu
+   - Nhận alerts và flows mới real-time
+   - Tự động update UI mà không cần refresh
+
+3. **User Actions (REST API):**
+   - Khi user thực hiện action (enable/disable rule, filter, search)
+   - UI gọi REST API với parameters tương ứng
+   - API Server trả về kết quả filtered
+
+**Code example - Dashboard component:**
+
+```javascript
+// Dashboard.jsx
+function Dashboard() {
+  const [stats, setStats] = useState({})
+  const [alerts, setAlerts] = useState([])
+  
+  // 1. Initial load với REST API
+  useEffect(() => {
+    const loadData = async () => {
+      // Load stats
+      const statsRes = await metricsAPI.getPrometheusStats()
+      setStats(statsRes.data)
+      
+      // Load alerts
+      const alertsRes = await alertsAPI.getAll({ limit: 50 })
+      setAlerts(alertsRes.data)
+    }
+    loadData()
+  }, [])
+  
+  // 2. Real-time updates với WebSocket
+  useEffect(() => {
+    const ws = createWebSocket('/stream/alerts')
+    
+    ws.onmessage = (event) => {
+      const alert = JSON.parse(event.data)
+      // Thêm alert mới vào đầu danh sách
+      setAlerts(prev => [alert, ...prev].slice(0, 50))
+    }
+    
+    return () => ws.close()
+  }, [])
+  
+  // 3. User actions
+  const handleFilter = async (severity) => {
+    const res = await alertsAPI.getAll({ severity, limit: 50 })
+    setAlerts(res.data)
+  }
+  
+  return (
+    // UI components
+  )
+}
+```
+
+**Code example - API Server handlers:**
 
 ```go
-func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetectionConfig, 
-    logger *logrus.Logger, promClient *client.PrometheusClient) {
+// handlers/handlers.go
+
+// REST API handler
+func (h *Handlers) GetAlerts(w http.ResponseWriter, r *http.Request) {
+    severity := r.URL.Query().Get("severity")
+    limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
     
-    for _, ruleConfig := range yamlConfig.Rules {
-        if !ruleConfig.Enabled {
-            continue  // Bỏ qua rules bị disable
-        }
-        
-        switch ruleConfig.Name {
-        // Xử lý từng loại rule
-        }
+    alerts := h.store.GetAlerts(limit, severity, "", "")
+    json.NewEncoder(w).Encode(alerts)
+}
+
+// WebSocket handler
+func (h *Handlers) StreamAlerts(w http.ResponseWriter, r *http.Request) {
+    conn, _ := upgrader.Upgrade(w, r, nil)
+    defer conn.Close()
+    
+    // Subscribe to alerts
+    sub := &storage.AlertSubscriber{
+        Channel: make(chan storage.Alert),
+        Filter: storage.AlertFilter{
+            Severity: r.URL.Query().Get("severity"),
+        },
+    }
+    h.store.SubscribeAlerts(sub)
+    defer h.store.UnsubscribeAlerts(sub)
+    
+    // Send alerts to client
+    for alert := range sub.Channel {
+        conn.WriteJSON(alert)
     }
 }
 ```
 
-**Bước 2: Khởi tạo đối tượng Rule**
-
-Ví dụ với **DDoS Rule** (real-time monitoring):
-
-```go
-case "ddos":
-    // Đọc threshold từ config
-    threshold := 3.0
-    if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
-        threshold = thresholds
-    } else if thresholds, ok := ruleConfig.Thresholds["multiplier"].(int); ok {
-        threshold = float64(thresholds)
-    }
-    
-    // Khởi tạo rule (không cần Prometheus client)
-    ddosRule := builtin.NewDDoSRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, logger)
-    
-    // Cấu hình alert emitter
-    ddosRule.SetAlertEmitter(func(alert *model.Alert) {
-        engine.EmitAlert(*alert)
-    })
-    
-    // Đăng ký vào engine
-    engine.RegisterRule(ddosRule)
-    logger.Infof("Registered rule: %s (threshold: %.2fx, real-time monitoring)", ruleConfig.Name, threshold)
-```
-
-Ví dụ với **Traffic Spike Rule** (Prometheus-based):
-
-```go
-case "traffic_spike":
-    if promClient != nil {
-        // Đọc threshold từ config
-        threshold := 3.0
-        if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
-            threshold = thresholds
-        } else if thresholds, ok := ruleConfig.Thresholds["multiplier"].(int); ok {
-            threshold = float64(thresholds)
-        }
-        
-        // Khởi tạo rule (cần Prometheus client)
-        promRule := builtin.NewTrafficSpikeRule(ruleConfig.Enabled, ruleConfig.Severity, 
-            threshold, promClient, logger)
-        
-        // Cấu hình namespaces
-        promRule.SetNamespaces(yamlConfig.Namespaces)
-        
-        // Cấu hình alert emitter
-        promRule.SetAlertEmitter(func(alert *model.Alert) {
-            engine.EmitAlert(*alert)
-        })
-        
-        // Đăng ký vào engine
-        engine.RegisterRule(promRule)
-        
-        // Chạy rule trong goroutine riêng (query Prometheus định kỳ)
-        ctx := context.Background()
-        go promRule.Start(ctx)
-        
-        logger.Infof("Registered rule: %s (threshold: %.2fx)", ruleConfig.Name, threshold)
-    }
-```
-
 **Giải thích:**
-- **DDoS Rule**: Khởi tạo đơn giản, không cần Prometheus client vì theo dõi trực tiếp từ flows
-- **Traffic Spike Rule**: Cần Prometheus client để query metrics, chạy trong goroutine riêng với `Start()`
-- Tất cả rules đều có `SetAlertEmitter()` để gửi alerts về engine
-- Rules được đăng ký vào engine qua `engine.RegisterRule()`
+- **REST API**: Dùng cho initial load, pagination, filtering, user actions
+- **WebSocket**: Dùng cho real-time updates, giảm số lượng HTTP requests
+- **Hybrid approach**: Kết hợp REST API và WebSocket để tối ưu performance
+- **State management**: UI quản lý state local, WebSocket chỉ update khi có dữ liệu mới
+- **Error handling**: UI có retry logic và fallback khi API/WebSocket lỗi
+
+---
+
 ## 3.2.3. Cấu hình các Rules phát hiện bất thường
 
 ### 3.2.3.1. Cấu trúc file cấu hình
@@ -930,41 +962,58 @@ rules:
 Hubble Relay
     │
     │ (gRPC Stream)
-    ▼
-Hubble Client
+    ├──► Anomaly Detector (cmd/hubble-guard)
+    │    │
+    │    │ (Process Flows)
+    │    ├──► Rule Engine
+    │    │    │
+    │    │    │ (Evaluate Rules)
+    │    │    ├──► Alert Generation
+    │    │    │    │
+    │    │    │    ├──► Telegram Notifier
+    │    │    │    ├──► Log Notifier
+    │    │    │    └──► Webhook Notifier
+    │    │    │
+    │    │    └──► Prometheus Metrics
+    │    │
+    │    └──► Prometheus Server
     │
-    │ (Convert Flow)
-    ▼
-Metrics Collector
-    │
-    │ (Record Metrics)
-    ▼
-Prometheus Server
-    │
-    │ (Query Metrics)
-    ▼
-Rule Engine
-    │
-    │ (Evaluate Rules)
-    ▼
-Alert Generation
-    │
-    ├──► Telegram Notifier
-    ├──► Log Notifier
-    └──► Webhook Notifier
+    └──► API Server (api/main.go)
+         │
+         │ (Stream Flows)
+         ├──► In-Memory Storage
+         │    │
+         │    ├──► Flows (max 50k)
+         │    ├──► Alerts (max 10k)
+         │    └──► Rules
+         │
+         │ (REST API / WebSocket)
+         └──► UI (React)
+              │
+              │ (Display)
+              └──► Web Browser
 ```
 
-### 3.2.2.2. Chi tiết các bước xử lý
+### 3.2.4.2. Chi tiết các bước xử lý
 
 **Bước 1: Thu thập dữ liệu từ Hubble**
 
 ```go
-// Stream flows từ Hubble Relay
-stream, err := client.GetFlows(ctx, req)
+// Anomaly Detector stream flows từ Hubble Relay
+stream, err := detectorClient.GetFlows(ctx, req)
 for {
     response, err := stream.Recv()
     flow := convertHubbleFlow(response.GetFlow())
-    // Xử lý flow
+    // Xử lý flow trong detector
+}
+
+// API Server cũng stream flows riêng cho UI
+stream, err := apiClient.GetFlows(ctx, req)
+for {
+    response, err := stream.Recv()
+    flow := convertHubbleFlow(response.GetFlow())
+    store.AddFlow(flow)  // Lưu vào storage
+    broadcastToWebSocketClients(flow)  // Gửi đến UI
 }
 ```
 
@@ -1004,6 +1053,29 @@ for _, notifier := range notifiers {
 }
 ```
 
+**Bước 5: UI hiển thị dữ liệu**
+
+```javascript
+// UI gọi REST API để lấy dữ liệu
+const flows = await flowsAPI.getAll({ page: 1, limit: 25 })
+const alerts = await alertsAPI.getAll({ severity: 'CRITICAL' })
+
+// UI kết nối WebSocket để nhận real-time updates
+const ws = createWebSocket('/stream/alerts')
+ws.onmessage = (event) => {
+  const alert = JSON.parse(event.data)
+  // Update UI với alert mới
+  updateAlerts(alert)
+}
+```
+
+**Giải thích:**
+- **Hai luồng độc lập**: Anomaly Detector và API Server đều stream từ Hubble riêng biệt
+- **Detector**: Xử lý flows, đánh giá rules, phát sinh alerts
+- **API Server**: Lưu flows vào storage, cung cấp API cho UI
+- **UI**: Gọi REST API để lấy dữ liệu, dùng WebSocket để nhận real-time updates
+- **Decoupling**: UI không phụ thuộc trực tiếp vào detector, chỉ giao tiếp với API Server
+
 ---
 
 ## 3.2.5. Các điểm kỹ thuật quan trọng
@@ -1013,102 +1085,36 @@ for _, notifier := range notifiers {
 - Sử dụng `sync.RWMutex` để bảo vệ shared state
 - Rule Engine sử dụng mutex khi đăng ký rules
 - Metrics collector thread-safe nhờ Prometheus client
+- API Server storage sử dụng mutex cho concurrent access
 
 ### 3.2.5.2. Error Handling
 
 - Graceful degradation: Nếu Prometheus không available, rules vẫn chạy nhưng không query
 - Retry mechanism cho Prometheus queries
 - Logging chi tiết để debug
+- API Server có health check endpoint (`/health`)
 
 ### 3.2.5.3. Performance Optimization
 
 - gRPC streaming thay vì polling
 - Time-windowed tracking cho port scan (tránh memory leak)
 - Batch processing cho metrics
+- WebSocket cho real-time updates thay vì polling
+- In-memory storage với giới hạn (50k flows, 10k alerts)
 
 ### 3.2.5.4. Configuration Management
 
 - YAML-based configuration
-- Environment variable support
+- Environment variable support cho UI (VITE_API_URL, VITE_WS_URL)
 - Default values cho tất cả settings
 - Validation khi load config
 
----
+### 3.2.5.5. Separation of Concerns
 
-## 3.2.6. Triển khai trên Kubernetes
-
-### 3.2.6.1. Helm Chart Structure
-
-```
-helm/hubble-guard/
-├── Chart.yaml
-├── values.yaml
-└── templates/
-    ├── anomaly-detector-deploy.yaml
-    ├── anomaly-detector-svc.yaml
-    ├── anomaly-detector-configmap.yaml
-    └── ...
-```
-
-### 3.2.6.2. Deployment Configuration
-
-**ConfigMap cho cấu hình:**
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: anomaly-detector-config
-data:
-  anomaly_detection.yaml: |
-    application:
-      hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
-    prometheus:
-      url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
-    rules:
-      - name: "traffic_spike"
-        enabled: true
-        ...
-```
-
-**Deployment:**
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: hubble-guard
-spec:
-  replicas: 1
-  template:
-    spec:
-      containers:
-      - name: detector
-        image: hubble-guard:latest
-        args:
-        - --config=/etc/config/anomaly_detection.yaml
-        volumeMounts:
-        - name: config
-          mountPath: /etc/config
-```
-
----
-
-## 3.2.7. Kết luận phần triển khai
-
-Trong phần này, sinh viên cần:
-
-1. **Trình bày rõ ràng kiến trúc** và lý do lựa chọn
-2. **Giải thích từng thành phần** và vai trò của nó
-3. **Chi tiết về cấu hình rules** và cách chúng hoạt động
-4. **Minh họa bằng code snippets** quan trọng
-5. **Giải thích các quyết định kỹ thuật** và trade-offs
-
-**Lưu ý:**
-- Không chỉ liệt kê code, mà phải giải thích **tại sao** làm như vậy
-- Sử dụng diagrams để minh họa luồng xử lý
-- So sánh với các approach khác nếu có
-- Nêu rõ các thách thức gặp phải và cách giải quyết
+- **Detector**: Chỉ xử lý flows và phát hiện anomalies
+- **API Server**: Chỉ cung cấp API và storage cho UI
+- **UI**: Chỉ hiển thị dữ liệu, không xử lý logic
+- Mỗi component có thể scale độc lập
 
 ---
 
@@ -1121,6 +1127,8 @@ Trong phần này, sinh viên cần:
 
 ### 3.2.2. Các thành phần chính
 - [ ] Entry Point (main.go)
+- [ ] API Server (api/main.go)
+- [ ] UI (Web Interface)
 - [ ] Hubble Client
 - [ ] Metrics Collector
 - [ ] Rule Engine
@@ -1139,15 +1147,13 @@ Trong phần này, sinh viên cần:
 - [ ] Data Flow Diagram
 - [ ] Chi tiết các bước xử lý
 - [ ] Timing và synchronization
+- [ ] Luồng dữ liệu từ Detector đến UI
 
 ### 3.2.5. Điểm kỹ thuật quan trọng
 - [ ] Thread Safety
 - [ ] Error Handling
 - [ ] Performance Optimization
 - [ ] Configuration Management
+- [ ] Separation of Concerns
 
-### 3.2.6. Triển khai
-- [ ] Kubernetes Deployment
-- [ ] Helm Charts
-- [ ] Monitoring và Logging
 
