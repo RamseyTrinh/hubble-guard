@@ -25,7 +25,7 @@ import {
 } from "@mui/material";
 import { Refresh, Download, Search } from "@mui/icons-material";
 import { format } from "date-fns";
-import { flowsAPI } from "../services/api";
+import { flowsAPI, WS_BASE_URL } from "../services/api";
 import useStore from "../store/useStore";
 
 export default function FlowViewer() {
@@ -53,7 +53,7 @@ export default function FlowViewer() {
 
   // ----------------- WebSocket listener --------------------
   useEffect(() => {
-    const wsUrl = "ws://localhost:5001/api/v1/stream/flows";
+    const wsUrl = `${WS_BASE_URL}/stream/flows`;
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => console.log("WS connected");

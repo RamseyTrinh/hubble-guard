@@ -36,10 +36,22 @@ export default function GrafanaEmbed({ dashboardUid, panelId, height = '600px', 
     }
 
     let baseUrl
-    if (USE_PROXY && import.meta.env.DEV) {
+    // In production build, Vite replaces import.meta.env.PROD with true
+    // Always use relative path /grafana in production (nginx will proxy)
+    if (import.meta.env.PROD) {
+      // Production build - always use nginx proxy
+      baseUrl = '/grafana'
+    } else if (USE_PROXY) {
+      // Development with proxy enabled - use proxy
       baseUrl = '/grafana'
     } else {
+      // Development with direct URL - use GRAFANA_URL (only for local dev)
       baseUrl = GRAFANA_URL.replace(/\/$/, '')
+    }
+    
+    // Debug log (remove in production if needed)
+    if (import.meta.env.DEV) {
+      console.log('Grafana baseUrl:', baseUrl, 'PROD:', import.meta.env.PROD, 'USE_PROXY:', USE_PROXY)
     }
 
     let url = `${baseUrl}/d/${dashboardUid}`
