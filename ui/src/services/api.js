@@ -14,23 +14,6 @@ const api = axios.create({
 
 export const flowsAPI = {
   getAll: (params = {}) => api.get('/flows', { params }),
-  getById: (id) => api.get(`/flows/${id}`),
-  getStats: () => api.get('/flows/stats'),
-}
-
-// Alerts API
-export const alertsAPI = {
-  getAll: (params = {}) => api.get('/alerts', { params }),
-  getById: (id) => api.get(`/alerts/${id}`),
-  getTimeline: (params = {}) => api.get('/alerts/timeline', { params }),
-}
-
-// Rules API
-export const rulesAPI = {
-  getAll: () => api.get('/rules'),
-  getById: (id) => api.get(`/rules/${id}`),
-  update: (id, data) => api.put(`/rules/${id}`, data),
-  getStats: () => api.get('/rules/stats'),
 }
 
 // Metrics API

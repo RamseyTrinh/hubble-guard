@@ -89,25 +89,11 @@ func main() {
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// Flows endpoints
-	api.HandleFunc("/flows/stats", h.GetFlowStats).Methods("GET")
 	api.HandleFunc("/stream/flows", h.StreamFlows).Methods("GET")
 	api.HandleFunc("/flows", h.GetFlows).Methods("GET")
 
-	// Alerts endpoints
-	api.HandleFunc("/alerts/timeline", h.GetAlertsTimeline).Methods("GET")
-	api.HandleFunc("/stream/alerts", h.StreamAlerts).Methods("GET")
-	api.HandleFunc("/alerts", h.GetAlerts).Methods("GET")
-	api.HandleFunc("/alerts/{id}", h.GetAlert).Methods("GET")
-
-	// Rules endpoints
-	api.HandleFunc("/rules/stats", h.GetRulesStats).Methods("GET")
-	api.HandleFunc("/rules", h.GetRules).Methods("GET")
-	api.HandleFunc("/rules/{id}", h.GetRule).Methods("GET")
-	api.HandleFunc("/rules/{id}", h.UpdateRule).Methods("PUT")
-
 	// Metrics endpoints
 	api.HandleFunc("/metrics/prometheus/stats", h.GetPrometheusStats).Methods("GET")
-	api.HandleFunc("/metrics/prometheus/test", h.TestPrometheusConnection).Methods("GET")
 	api.HandleFunc("/metrics/prometheus/dropped-flows/timeseries", h.GetDroppedFlowsTimeSeries).Methods("GET")
 	api.HandleFunc("/metrics/prometheus/alert-types", h.GetAlertTypesStats).Methods("GET")
 
