@@ -137,6 +137,12 @@ data:
             <button id="unusual-toggle" style="background:#00bcd4;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
             <div id="unusual-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
           </div>
+          <div class="scenario-card">
+            <h3>Namespace Access <span class="rule-badge">ns_access</span></h3>
+            <p>Attacker truy cập kube-system namespace</p>
+            <button id="nsaccess-toggle" style="background:#673ab7;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="nsaccess-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
+          </div>
         </div>
 
         <div class="row" style="margin-top:16px;">
@@ -328,6 +334,27 @@ data:
           }
         };
 
+        // Namespace Access - Toggle show/hide command
+        document.getElementById('nsaccess-toggle').onclick = function() {
+          const cmdEl = document.getElementById('nsaccess-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s http://target-api.test-demo.svc.cluster.local/status/200; sleep 1; done"<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s http://target-api.test-demo.svc.cluster.local/status/200; sleep 1; done"');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#673ab7';
+          }
+        };
+
         // Suspicious Outbound - Attempt connections to suspicious patterns
         document.getElementById('suspicious').onclick = () => {
           clearAllTimers();
@@ -452,3 +479,50 @@ spec:
             - NET_RAW      # Required for nmap SYN scan, ping, etc.
             - NET_ADMIN    # Required for tcpdump, iptables, etc.
   restartPolicy: Always
+---
+# Namespace for cross-namespace access testing
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-demo
+  labels:
+    purpose: security-testing
+---
+# Target pod in test-demo namespace
+apiVersion: v1
+kind: Pod
+metadata:
+  name: target-api
+  namespace: test-demo
+  labels:
+    app: target-api
+spec:
+  containers:
+    - name: api
+      image: mccutchen/go-httpbin:v2.14.0
+      ports:
+        - containerPort: 8080
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "200m"
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+  restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: target-api
+  namespace: test-demo
+  labels:
+    app: target-api
+spec:
+  selector:
+    app: target-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP

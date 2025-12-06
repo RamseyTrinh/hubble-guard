@@ -14,40 +14,23 @@ import (
 
 type PrometheusMetrics struct {
 	// Flow metrics
-	FlowTotal         *prometheus.CounterVec
-	FlowByVerdict     *prometheus.CounterVec
-	FlowByProtocol    *prometheus.CounterVec
-	FlowByNamespace   *prometheus.CounterVec
-	FlowBySource      *prometheus.CounterVec
-	FlowByDestination *prometheus.CounterVec
+	FlowTotal       *prometheus.CounterVec
+	FlowByVerdict   *prometheus.CounterVec
+	FlowByProtocol  *prometheus.CounterVec
+	FlowByNamespace *prometheus.CounterVec
 
 	// TCP metrics
 	TCPConnections *prometheus.CounterVec
 	TCPFlags       *prometheus.CounterVec
 	TCPBytes       *prometheus.CounterVec
 
-	// UDP metrics
-	UDPPackets *prometheus.CounterVec
-	UDPBytes   *prometheus.CounterVec
-
-	// L7 metrics
-	L7Requests *prometheus.CounterVec
-	L7ByType   *prometheus.CounterVec
-
 	// Error metrics
-	FlowErrors       *prometheus.CounterVec
 	ConnectionErrors *prometheus.CounterVec
 
-	// Performance metrics
-	FlowProcessingTime *prometheus.HistogramVec
-	ActiveConnections  *prometheus.GaugeVec
-
 	// Anomaly detection metrics
-	BaselineTrafficRate    *prometheus.GaugeVec
 	TrafficSpikeMultiplier *prometheus.GaugeVec
 	NewDestinations        *prometheus.CounterVec
 	ErrorResponseRate      *prometheus.CounterVec
-	TCPResetRate           *prometheus.CounterVec
 	TCPDropRate            *prometheus.CounterVec
 	PortScanDistinctPorts  *prometheus.GaugeVec
 	NamespaceAccess        *prometheus.CounterVec // Cross-namespace access tracking
@@ -175,22 +158,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace"},
 		),
 
-		FlowBySource: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_flows_by_source_total",
-				Help: "Total number of flows by source",
-			},
-			[]string{"source_ip", "source_port", "namespace"},
-		),
-
-		FlowByDestination: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_flows_by_destination_total",
-				Help: "Total number of flows by destination",
-			},
-			[]string{"destination_ip", "destination_port", "namespace"},
-		),
-
 		TCPConnections: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_tcp_connections_total",
@@ -215,77 +182,12 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "direction"},
 		),
 
-		UDPPackets: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_udp_packets_total",
-				Help: "Total number of UDP packets",
-			},
-			[]string{"namespace", "source_ip", "destination_ip"},
-		),
-
-		UDPBytes: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_udp_bytes_total",
-				Help: "Total number of UDP bytes",
-			},
-			[]string{"namespace", "direction"},
-		),
-
-		L7Requests: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_l7_requests_total",
-				Help: "Total number of L7 requests",
-			},
-			[]string{"type", "namespace"},
-		),
-
-		L7ByType: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_l7_by_type_total",
-				Help: "Total number of L7 requests by type",
-			},
-			[]string{"l7_type", "namespace"},
-		),
-
-		FlowErrors: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_flow_errors_total",
-				Help: "Total number of flow errors",
-			},
-			[]string{"error_type", "namespace"},
-		),
-
 		ConnectionErrors: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_connection_errors_total",
 				Help: "Total number of connection errors",
 			},
 			[]string{"error_type"},
-		),
-
-		FlowProcessingTime: promauto.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "hubble_flow_processing_duration_seconds",
-				Help:    "Time spent processing flows",
-				Buckets: prometheus.DefBuckets,
-			},
-			[]string{"namespace"},
-		),
-
-		ActiveConnections: promauto.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "hubble_active_connections",
-				Help: "Number of active connections",
-			},
-			[]string{"namespace", "protocol"},
-		),
-
-		BaselineTrafficRate: promauto.NewGaugeVec(
-			prometheus.GaugeOpts{
-				Name: "hubble_baseline_traffic_rate",
-				Help: "Baseline traffic rate for anomaly detection",
-			},
-			[]string{"namespace"},
 		),
 
 		TrafficSpikeMultiplier: promauto.NewGaugeVec(
@@ -312,14 +214,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "error_type"},
 		),
 
-		TCPResetRate: promauto.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "hubble_tcp_resets_total",
-				Help: "Total number of TCP resets",
-			},
-			[]string{"namespace", "source_ip", "destination_ip"},
-		),
-
 		TCPDropRate: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_tcp_drops_total",
@@ -338,7 +232,7 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 
 		NamespaceAccess: promauto.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "hubble_namespace_access_total",
+				Name: "namespace_access_total",
 				Help: "Total number of cross-namespace access attempts",
 			},
 			[]string{"source_namespace", "dest_namespace", "dest_service", "dest_pod"},
@@ -438,59 +332,18 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 		} else if flow.L4.UDP != nil {
 			protocol := "udp"
 			m.FlowByProtocol.WithLabelValues(protocol, namespace).Inc()
-
-			// UDP specific metrics
-			if flow.IP != nil {
-				sourceIP := flow.IP.Source
-				destIP := flow.IP.Destination
-				m.UDPPackets.WithLabelValues(namespace, sourceIP, destIP).Inc()
-
-				// UDP bytes
-				if flow.L4.UDP.Bytes > 0 {
-					m.UDPBytes.WithLabelValues(namespace, "outbound").Add(float64(flow.L4.UDP.Bytes))
-				}
-			}
 		}
-	}
-
-	// L7 metrics
-	if flow.L7 != nil {
-		l7Type := flow.L7.Type.String()
-		m.L7Requests.WithLabelValues(l7Type, namespace).Inc()
-		m.L7ByType.WithLabelValues(l7Type, namespace).Inc()
-	}
-
-	// Source and destination metrics
-	if flow.IP != nil {
-		sourceIP := flow.IP.Source
-		destIP := flow.IP.Destination
-
-		sourcePort := "unknown"
-		destPort := "unknown"
-
-		if flow.L4 != nil {
-			if flow.L4.TCP != nil {
-				sourcePort = fmt.Sprintf("%d", flow.L4.TCP.SourcePort)
-				destPort = fmt.Sprintf("%d", flow.L4.TCP.DestinationPort)
-			} else if flow.L4.UDP != nil {
-				sourcePort = fmt.Sprintf("%d", flow.L4.UDP.SourcePort)
-				destPort = fmt.Sprintf("%d", flow.L4.UDP.DestinationPort)
-			}
-		}
-
-		m.FlowBySource.WithLabelValues(sourceIP, sourcePort, namespace).Inc()
-		m.FlowByDestination.WithLabelValues(destIP, destPort, namespace).Inc()
-	}
-
-	// Error metrics
-	if flow.Verdict == model.Verdict_ERROR {
-		m.FlowErrors.WithLabelValues("verdict_error", namespace).Inc()
 	}
 
 	// Namespace access tracking - track cross-namespace access
 	if flow.Source != nil && flow.Destination != nil {
 		sourceNS := flow.Source.Namespace
 		destNS := flow.Destination.Namespace
+
+		// Debug: log all namespace pairs
+		if sourceNS != "" && destNS != "" {
+		}
+
 		if sourceNS != "" && destNS != "" && sourceNS != destNS {
 			destService := flow.Destination.ServiceName
 			if destService == "" {
@@ -536,24 +389,8 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	}
 }
 
-func (m *PrometheusMetrics) RecordError(errorType, namespace string) {
-	m.FlowErrors.WithLabelValues(errorType, namespace).Inc()
-}
-
 func (m *PrometheusMetrics) RecordConnectionError(errorType string) {
 	m.ConnectionErrors.WithLabelValues(errorType).Inc()
-}
-
-func (m *PrometheusMetrics) RecordProcessingTime(namespace string, duration float64) {
-	m.FlowProcessingTime.WithLabelValues(namespace).Observe(duration)
-}
-
-func (m *PrometheusMetrics) UpdateActiveConnections(namespace, protocol string, count float64) {
-	m.ActiveConnections.WithLabelValues(namespace, protocol).Set(count)
-}
-
-func (m *PrometheusMetrics) UpdateBaselineTrafficRate(namespace string, rate float64) {
-	m.BaselineTrafficRate.WithLabelValues(namespace).Set(rate)
 }
 
 func (m *PrometheusMetrics) UpdateTrafficSpikeMultiplier(namespace string, multiplier float64) {
@@ -566,10 +403,6 @@ func (m *PrometheusMetrics) RecordNewDestination(sourceIP, destIP, namespace str
 
 func (m *PrometheusMetrics) RecordErrorResponse(namespace, errorType string) {
 	m.ErrorResponseRate.WithLabelValues(namespace, errorType).Inc()
-}
-
-func (m *PrometheusMetrics) RecordTCPReset(namespace, sourceIP, destIP string) {
-	m.TCPResetRate.WithLabelValues(namespace, sourceIP, destIP).Inc()
 }
 
 func (m *PrometheusMetrics) RecordTCPDrop(namespace, sourceIP, destIP string) {

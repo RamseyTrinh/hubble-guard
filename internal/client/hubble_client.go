@@ -245,12 +245,6 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 		namespace = flow.Destination.Namespace
 	}
 
-	if flow.L4 != nil && flow.L4.TCP != nil && flow.L4.TCP.Flags != nil && flow.L4.TCP.Flags.RST {
-		if flow.IP != nil {
-			c.metrics.RecordTCPReset(namespace, flow.IP.Source, flow.IP.Destination)
-		}
-	}
-
 	if flow.Verdict == model.Verdict_DROPPED {
 		if flow.IP != nil {
 			c.metrics.RecordTCPDrop(namespace, flow.IP.Source, flow.IP.Destination)
@@ -271,10 +265,6 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 		if destPort > 0 {
 			c.metrics.UpdatePortScanDistinctPorts(flow.IP.Source, flow.IP.Destination, namespace, destPort)
 		}
-	}
-
-	if flow.L7 != nil {
-		c.metrics.RecordErrorResponse(namespace, "l7_flow")
 	}
 
 	// Record source-destination traffic for all flows

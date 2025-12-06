@@ -42,12 +42,12 @@ rules:
   - name: "namespace_access"
     enabled: true
     severity: "HIGH"
-    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm (kube-system, monitoring, security) và truy cập kube-dns"
+    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm"
     thresholds:
       forbidden_namespaces:
-        - "kube-system"
         - "monitoring"
         - "security"
+        - "test-demo"
 
   - name: "suspicious_outbound"
     enabled: true
@@ -99,14 +99,14 @@ rules:
   - name: "block_connection"
     enabled: true
     severity: "HIGH"
-    description: "Phát hiện blocked connections (DROP flows)"
+    description: "Phát hiện DROP flows"
     thresholds:
       per_minute: 10
 
   - name: "unusual_traffic"
     enabled: true
     severity: "HIGH"
-    description: "Phát hiện traffic từ nguồn bất thường đến các service được bảo vệ"
+    description: "Phát hiện traffic bất thường"
     thresholds:
       allowed_sources:
         demo-api:
