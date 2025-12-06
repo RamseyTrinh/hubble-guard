@@ -122,13 +122,20 @@ data:
           </div>
           <div class="scenario-card">
             <h3>Port Scan <span class="rule-badge">port_scan</span></h3>
-            <p>Quét nhiều port khác nhau để test Port Scan Rule</p>
-            <button id="portscan">Start Port Scan</button>
+            <p>Dùng nmap/netcat từ attacker pod</p>
+            <button id="portscan-toggle" style="background:#9c27b0;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="portscan-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;" title="Click to copy"></div>
           </div>
           <div class="scenario-card">
             <h3>Suspicious Out<span class="rule-badge">suspicious_out</span></h3>
             <p>Traffic đến các port đáng ngờ (cần cấu hình network)</p>
             <button id="suspicious">Start Suspicious</button>
+          </div>
+          <div class="scenario-card">
+            <h3>Unusual Traffic <span class="rule-badge">unusual</span></h3>
+            <p>Attacker pod giao tiếp với demo-api</p>
+            <button id="unusual-toggle" style="background:#00bcd4;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="unusual-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
           </div>
         </div>
 
@@ -279,32 +286,46 @@ data:
           timers.push(timer);
         };
 
-        // Port Scan - Simulate scanning multiple ports
-        document.getElementById('portscan').onclick = () => {
-          clearAllTimers();
-          activeScenario = 'portscan';
-          log('Starting Port Scan scenario (scanning multiple endpoints rapidly)', 'warning');
-          const endpoints = ['status/200', 'status/204', 'status/404', 'delay/0.1', 'delay/0.5', 'delay/1.0', 'status/500'];
-          let endpointIndex = 0;
-          const timer = setInterval(() => {
-            if (activeScenario !== 'portscan') {
-              clearInterval(timer);
-              return;
-            }
-            // Send to different endpoints rapidly to simulate port scanning
-            for (let i = 0; i < 15; i++) {
-              const endpoint = endpoints[(endpointIndex + i) % endpoints.length];
-              const timeoutId = setTimeout(() => {
-                if (activeScenario === 'portscan') {
-                  send(endpoint);
-                }
-              }, i * 5);
-              timeouts.push(timeoutId);
-            }
-            endpointIndex = (endpointIndex + 1) % endpoints.length;
-            log(`Port scan batch sent (15 requests to different endpoints)`, 'warning');
-          }, 200); // Every 200ms
-          timers.push(timer);
+        // Port Scan - Toggle show/hide command
+        document.getElementById('portscan-toggle').onclick = function() {
+          const cmdEl = document.getElementById('portscan-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- nmap -sT -p 1-100 demo-api.default.svc.cluster.local<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- nmap -sT -p 1-100 demo-api.default.svc.cluster.local');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#9c27b0';
+          }
+        };
+
+        // Unusual Traffic - Toggle show/hide command
+        document.getElementById('unusual-toggle').onclick = function() {
+          const cmdEl = document.getElementById('unusual-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s http://demo-api.default.svc.cluster.local/status/200; sleep 1; done"<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s http://demo-api.default.svc.cluster.local/status/200; sleep 1; done"');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#00bcd4';
+          }
         };
 
         // Suspicious Outbound - Attempt connections to suspicious patterns
@@ -403,3 +424,31 @@ spec:
       port: 80
       targetPort: 8080
       protocol: TCP
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: attacker
+  namespace: default
+  labels:
+    app: attacker
+    role: security-testing
+spec:
+  containers:
+    - name: attacker
+      image: nicolaka/netshoot:latest
+      command: ["sleep", "infinity"]
+      resources:
+        limits:
+          memory: "256Mi"
+          cpu: "500m"
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+      securityContext:
+        capabilities:
+          add:
+            - NET_RAW      # Required for nmap SYN scan, ping, etc.
+            - NET_ADMIN    # Required for tcpdump, iptables, etc.
+  restartPolicy: Always

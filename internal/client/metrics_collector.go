@@ -52,6 +52,8 @@ type PrometheusMetrics struct {
 	PortScanDistinctPorts  *prometheus.GaugeVec
 	NamespaceAccess        *prometheus.CounterVec // Cross-namespace access tracking
 	SuspiciousOutbound     *prometheus.CounterVec // Suspicious outbound connections tracking
+	// Source-Destination traffic tracking (for unusual traffic detection)
+	SourceDestTraffic *prometheus.CounterVec
 
 	// Alert metrics
 	AlertCounter *prometheus.CounterVec // Total alerts detected
@@ -350,6 +352,14 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 			[]string{"namespace", "destination_port"},
 		),
 
+		SourceDestTraffic: promauto.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "source_dest_traffic_total",
+				Help: "Total traffic between source and destination pods",
+			},
+			[]string{"namespace", "source_pod", "dest_pod", "dest_service"},
+		),
+
 		AlertCounter: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "hubble_guard_alerts_total",
@@ -643,4 +653,21 @@ func (m *PrometheusMetrics) RecordAlert(namespace, severity, alertType string) {
 		alertType = "unknown"
 	}
 	m.AlertCounter.WithLabelValues(namespace, severity, alertType).Inc()
+}
+
+// RecordSourceDestTraffic records traffic between source pod and destination pod/service
+func (m *PrometheusMetrics) RecordSourceDestTraffic(namespace, sourcePod, destPod, destService string) {
+	if namespace == "" {
+		namespace = "unknown"
+	}
+	if sourcePod == "" {
+		sourcePod = "unknown"
+	}
+	if destPod == "" {
+		destPod = "unknown"
+	}
+	if destService == "" {
+		destService = "unknown"
+	}
+	m.SourceDestTraffic.WithLabelValues(namespace, sourcePod, destPod, destService).Inc()
 }

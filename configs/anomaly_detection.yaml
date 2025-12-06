@@ -27,13 +27,42 @@ rules:
     thresholds:
       multiplier: 3.0
   
+  - name: "traffic_death"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
+  
+  - name: "port_scan"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện port scanning attacks"
+    thresholds:
+      distinct_ports: 50
+  
+  - name: "namespace_access"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm (kube-system, monitoring, security) và truy cập kube-dns"
+    thresholds:
+      forbidden_namespaces:
+        - "kube-system"
+        - "monitoring"
+        - "security"
+
+  - name: "suspicious_outbound"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện các kết nối outbound đáng ngờ đến các port như Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
+    thresholds:
+      per_minute: 10
+  
   - name: "traffic_spike"
     enabled: true
     severity: "CRITICAL"
     description: "Phát hiện traffic spike có thể là DDoS (từ Prometheus)"
     thresholds:
       multiplier: 3.0
-  
+
   - name: "new_destination"
     enabled: true
     severity: "HIGH"
@@ -73,36 +102,16 @@ rules:
     description: "Phát hiện blocked connections (DROP flows)"
     thresholds:
       per_minute: 10
-  
-  - name: "port_scan"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện port scanning attacks"
-    thresholds:
-      distinct_ports: 50
-  
-  - name: "namespace_access"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm (kube-system, monitoring, security) và truy cập kube-dns"
-    thresholds:
-      forbidden_namespaces:
-        - "kube-system"
-        - "monitoring"
-        - "security"
-  
-  - name: "suspicious_outbound"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện các kết nối outbound đáng ngờ đến các port như Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
-    thresholds:
-      per_minute: 10
-  
-  - name: "traffic_death"
-    enabled: true
-    severity: "CRITICAL"
-    description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
 
+  - name: "unusual_traffic"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện traffic từ nguồn bất thường đến các service được bảo vệ"
+    thresholds:
+      allowed_sources:
+        demo-api:
+          - "demo-frontend"
+  
 alerting:
   enabled: true
   max_alerts_per_minute: 10

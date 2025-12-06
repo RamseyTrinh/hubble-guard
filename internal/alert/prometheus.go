@@ -118,6 +118,7 @@ func (c *PrometheusCollector) Describe(ch chan<- *prometheus.Desc) {
 	c.metrics.TCPDropRate.Describe(ch)
 	c.metrics.PortScanDistinctPorts.Describe(ch)
 	c.metrics.AlertCounter.Describe(ch)
+	c.metrics.SourceDestTraffic.Describe(ch)
 }
 
 func (c *PrometheusCollector) Collect(ch chan<- prometheus.Metric) {
@@ -146,6 +147,7 @@ func (c *PrometheusCollector) Collect(ch chan<- prometheus.Metric) {
 	c.metrics.TCPDropRate.Collect(ch)
 	c.metrics.PortScanDistinctPorts.Collect(ch)
 	c.metrics.AlertCounter.Collect(ch)
+	c.metrics.SourceDestTraffic.Collect(ch)
 }
 
 func RegisterCustomMetrics(registry prometheus.Registerer, metrics *client.PrometheusMetrics) error {

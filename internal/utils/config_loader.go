@@ -414,6 +414,42 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				logger.Infof("Registered rule: %s (forbidden namespaces: %v)", ruleConfig.Name, forbiddenNS)
 			}
 
+		case "unusual_traffic":
+			if promClient != nil {
+				// Parse allowed_sources from thresholds
+				var allowedSources map[string][]string
+				if sourcesConfig, ok := ruleConfig.Thresholds["allowed_sources"].(map[string]interface{}); ok {
+					allowedSources = make(map[string][]string)
+					for service, sources := range sourcesConfig {
+						if sourceList, ok := sources.([]interface{}); ok {
+							for _, src := range sourceList {
+								if srcStr, ok := src.(string); ok {
+									allowedSources[service] = append(allowedSources[service], srcStr)
+								}
+							}
+						} else if sourceList, ok := sources.([]string); ok {
+							allowedSources[service] = sourceList
+						}
+					}
+				}
+
+				unusualRule := builtin.NewUnusualTrafficRule(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
+				unusualRule.SetNamespaces(yamlConfig.Namespaces)
+				if len(allowedSources) > 0 {
+					unusualRule.SetAllowedSources(allowedSources)
+					logger.Infof("Unusual Traffic Rule: configured allowed sources: %v", allowedSources)
+				} else {
+					logger.Infof("Unusual Traffic Rule: using default allowed sources (demo-api: [demo-frontend])")
+				}
+				unusualRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(unusualRule)
+				ctx := context.Background()
+				go unusualRule.Start(ctx)
+				logger.Infof("Registered rule: %s", ruleConfig.Name)
+			}
+
 		default:
 			logger.Warnf("Unknown rule type: %s", ruleConfig.Name)
 		}

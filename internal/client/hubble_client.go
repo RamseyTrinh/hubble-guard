@@ -276,6 +276,52 @@ func (c *HubbleGRPCClient) recordAnomalyDetectionMetrics(flow *model.Flow) {
 	if flow.L7 != nil {
 		c.metrics.RecordErrorResponse(namespace, "l7_flow")
 	}
+
+	// Record source-destination traffic for all flows
+	c.recordSourceDestTraffic(flow, namespace)
+}
+
+// recordSourceDestTraffic records traffic between source and destination pods
+func (c *HubbleGRPCClient) recordSourceDestTraffic(flow *model.Flow, namespace string) {
+	if flow.Source == nil || flow.Destination == nil {
+		return
+	}
+
+	sourcePod := flow.Source.PodName
+	destPod := flow.Destination.PodName
+
+	if sourcePod == "" || destPod == "" {
+		return
+	}
+
+	destService := extractServiceName(destPod)
+
+	c.metrics.RecordSourceDestTraffic(namespace, sourcePod, destPod, destService)
+}
+
+// extractServiceName extracts service name from pod name (e.g., demo-api-xxx -> demo-api)
+func extractServiceName(podName string) string {
+	if podName == "" {
+		return ""
+	}
+	// Remove trailing hash suffixes (e.g., demo-api-5f7b8c9d4f-abc12 -> demo-api)
+	parts := strings.Split(podName, "-")
+	if len(parts) <= 2 {
+		return podName
+	}
+	// Typical pod name: service-deployment-hash-hash
+	// We want: service or service-name
+	// Heuristic: remove last 2 parts if they look like hashes
+	if len(parts) >= 3 {
+		// Check if last parts look like k8s generated hashes (alphanumeric, 5+ chars)
+		lastPart := parts[len(parts)-1]
+		secondLastPart := parts[len(parts)-2]
+		if len(lastPart) >= 5 && len(secondLastPart) >= 5 {
+			// Likely a deployment pod name, remove last 2 parts
+			return strings.Join(parts[:len(parts)-2], "-")
+		}
+	}
+	return podName
 }
 
 func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
@@ -566,11 +612,33 @@ func (c *HubbleGRPCClient) convertHubbleFlow(hubbleFlow *observer.Flow) *model.F
 			}
 		}
 
+		// Get pod name - try multiple sources
+		podName := source.GetPodName()
+		workload := ""
+		serviceName := ""
+
+		// Try to extract from labels if pod name is empty
+		if podName == "" {
+			if name, ok := labels["k8s:io.kubernetes.pod.name"]; ok {
+				podName = name
+			}
+		}
+		// Get app label as workload
+		if app, ok := labels["k8s:app"]; ok {
+			workload = app
+		} else if app, ok := labels["app"]; ok {
+			workload = app
+		}
+		// Get service name from labels
+		if svc, ok := labels["k8s:io.cilium.k8s.policy.serviceaccount"]; ok {
+			serviceName = svc
+		}
+
 		flow.Source = &model.Endpoint{
 			Namespace:   source.GetNamespace(),
-			PodName:     source.GetPodName(),
-			ServiceName: "",
-			Workload:    "",
+			PodName:     podName,
+			ServiceName: serviceName,
+			Workload:    workload,
 			Labels:      labels,
 		}
 	}
@@ -586,11 +654,35 @@ func (c *HubbleGRPCClient) convertHubbleFlow(hubbleFlow *observer.Flow) *model.F
 			}
 		}
 
+		// Get pod name - try multiple sources
+		podName := dest.GetPodName()
+		workload := ""
+		serviceName := ""
+
+		// Try to extract from labels if pod name is empty
+		if podName == "" {
+			if name, ok := labels["k8s:io.kubernetes.pod.name"]; ok {
+				podName = name
+			}
+		}
+		// Get app label as workload/service
+		if app, ok := labels["k8s:app"]; ok {
+			workload = app
+			if serviceName == "" {
+				serviceName = app
+			}
+		} else if app, ok := labels["app"]; ok {
+			workload = app
+			if serviceName == "" {
+				serviceName = app
+			}
+		}
+
 		flow.Destination = &model.Endpoint{
 			Namespace:   dest.GetNamespace(),
-			PodName:     dest.GetPodName(),
-			ServiceName: "",
-			Workload:    "",
+			PodName:     podName,
+			ServiceName: serviceName,
+			Workload:    workload,
 			Labels:      labels,
 		}
 	}

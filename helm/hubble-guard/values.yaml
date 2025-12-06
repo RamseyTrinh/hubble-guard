@@ -111,6 +111,15 @@ rules:
     severity: "CRITICAL"
     description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
 
+  - name: "unusual_traffic"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện traffic từ nguồn bất thường đến các service được bảo vệ (ví dụ: attacker pod truy cập demo-api thay vì demo-frontend)"
+    thresholds:
+      allowed_sources:
+        demo-api:
+          - "demo-frontend"
+
 # Alerting configuration
 alerting:
   enabled: true
