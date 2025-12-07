@@ -30,9 +30,9 @@ rules:
   - name: "ddos"
     enabled: true
     severity: "CRITICAL"
-    description: "Phát hiện DDoS attack real-time (theo dõi trực tiếp từ flows)"
+    description: "Phát hiện DDoS attack real-time"
     thresholds:
-      multiplier: 3.0
+      multiplier: 10.0
   
   - name: "traffic_death"
     enabled: true
@@ -44,7 +44,7 @@ rules:
     severity: "HIGH"
     description: "Phát hiện port scanning attacks"
     thresholds:
-      distinct_ports: 50
+      distinct_ports: 20
   
   - name: "namespace_access"
     enabled: true
@@ -71,14 +71,14 @@ rules:
   - name: "block_connection"
     enabled: true
     severity: "HIGH"
-    description: "Phát hiện DROP flows (blocked connections)"
+    description: "Phát hiện DROP flows"
     thresholds:
       per_minute: 10
 
   - name: "unusual_traffic"
     enabled: true
     severity: "HIGH"
-    description: "Phát hiện traffic từ nguồn bất thường đến các service được bảo vệ"
+    description: "Phát hiện traffic bất thường"
     thresholds:
       allowed_sources:
         demo-api:
@@ -96,23 +96,11 @@ alerting:
     telegram: true
   
   telegram:
-    bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"  # Set your Telegram bot token
-    chat_id: "5037781514"    # Set your Telegram chat ID
-    parse_mode: "Markdown"
-    enabled: true  # Set to true after configuring bot_token and chat_id
-    message_template: |
-      🚨 *{{ .Severity }} Alert*
-      
-      *Type:* {{ .Type }}
-      *Time:* {{ formatTime .Timestamp "2006-01-02 15:04:05" }}
-      *Message:* {{ .Message }}
-      
-      {{ if and .FlowData .FlowData.Source }}
-      *Source:* {{ .FlowData.Source.Namespace }}/{{ .FlowData.Source.PodName }}
-      {{ end }}
-      {{ if and .FlowData .FlowData.Destination }}
-      *Destination:* {{ .FlowData.Destination.Namespace }}/{{ .FlowData.Destination.PodName }}
-      {{ end }}
+    bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"
+    chat_id: "5037781514"
+    parse_mode: ""
+    enabled: true
+    message_template: ""
 
 # Logging configuration
 logging:
