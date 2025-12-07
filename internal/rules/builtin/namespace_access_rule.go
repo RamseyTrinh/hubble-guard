@@ -190,7 +190,6 @@ func (r *NamespaceAccessRule) checkFromPrometheus(ctx context.Context) {
 	}
 }
 
-// isAlertedRecently checks if we already alerted for this pair recently
 func (r *NamespaceAccessRule) isAlertedRecently(key string) bool {
 	r.alertedMu.RLock()
 	defer r.alertedMu.RUnlock()
@@ -202,7 +201,6 @@ func (r *NamespaceAccessRule) isAlertedRecently(key string) bool {
 	return time.Since(lastAlerted) < r.alertCooldown
 }
 
-// markAlerted records that we alerted for this pair
 func (r *NamespaceAccessRule) markAlerted(key string) {
 	r.alertedMu.Lock()
 	defer r.alertedMu.Unlock()

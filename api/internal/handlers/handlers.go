@@ -98,7 +98,7 @@ func (fb *FlowBroadcaster) run() {
 
 		fb.logger.Infof("🔌 Opening Hubble gRPC Stream for namespaces: %v", namespaces)
 
-		err := hc.StreamFlowsWithMetricsOnly(
+		err := hc.StreamFlowsWithMetrics(
 			context.Background(),
 			namespaces,
 			func(ns string) {},

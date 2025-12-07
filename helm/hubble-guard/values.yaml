@@ -6,7 +6,6 @@ application:
   hubble_server: "hubble-relay.kube-system.svc.cluster.local:80"
   prometheus_export_url: "8080"
   default_namespace: "default"
-  auto_start: false
 
 # Prometheus configuration (for anomaly detector to connect to)
 # Note: URL will be dynamically set based on service name
@@ -128,7 +127,7 @@ anomalyDetector:
   image:
     repository: docker.io/ramseytrinh338/hubble-guard
     pullPolicy: IfNotPresent
-    tag: "1.0.0"
+    tag: "latest"
   
   imagePullSecrets: []
   
@@ -177,7 +176,7 @@ apiServer:
   image:
     repository: docker.io/ramseytrinh338/hubble-guard-api
     pullPolicy: IfNotPresent
-    tag: "1.0.0"
+    tag: "latest"
   
   imagePullSecrets: []
   
@@ -316,7 +315,7 @@ ui:
   
   image:
     repository: docker.io/ramseytrinh338/hubble-guard-ui
-    tag: "1.0.0"
+    tag: "latest"
     pullPolicy: IfNotPresent
   
   imagePullSecrets: []

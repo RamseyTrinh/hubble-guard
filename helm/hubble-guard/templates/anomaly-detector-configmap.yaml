@@ -14,7 +14,6 @@ data:
       hubble_server: {{ .Values.application.hubble_server | quote }}
       prometheus_export_url: {{ .Values.application.prometheus_export_url | quote }}
       default_namespace: {{ .Values.application.default_namespace | quote }}
-      auto_start: {{ .Values.application.auto_start }}
     
     prometheus:
       url: {{ if .Values.prometheusConfig.url }}{{ .Values.prometheusConfig.url | quote }}{{ else }}{{ printf "http://%s.%s.svc.cluster.local:%v" (include "hubble-guard.prometheus.serviceName" .) .Release.Namespace .Values.prometheus.service.port | quote }}{{ end }}

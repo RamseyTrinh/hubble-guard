@@ -5,7 +5,7 @@
 # Variables
 BINARY_NAME=hubble-guard
 BUILD_DIR=build
-VERSION=1.0.0
+VERSION=$(shell cat VERSION)
 DOCKER_REGISTRY=docker.io/ramseytrinh338
 DOCKER_USERNAME=ramseytrinh338
 
@@ -27,11 +27,6 @@ build:
 run: build
 	@echo "Running $(BINARY_NAME)..."
 	@./$(BUILD_DIR)/$(BINARY_NAME)
-
-# Run with custom parameters
-run-dev: build
-	@echo "Running $(BINARY_NAME) in development mode..."
-	@./$(BUILD_DIR)/$(BINARY_NAME) --log-level=debug --hubble-server=localhost:4245
 
 # API Server commands (run from root)
 api-run:
@@ -83,24 +78,6 @@ lint:
 	@echo "Linting code..."
 	@go vet ./...
 	@echo "Linting complete"
-
-# Build for multiple platforms
-build-all:
-	@echo "Building for multiple platforms..."
-	@mkdir -p $(BUILD_DIR)
-	@GOOS=linux GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 ./cmd/hubble-guard
-	@GOOS=windows GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe ./cmd/hubble-guard
-	@GOOS=darwin GOARCH=amd64 go build -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 ./cmd/hubble-guard
-	@echo "Multi-platform build complete"
-
-# Create release package
-release: clean build-all
-	@echo "Creating release package..."
-	@mkdir -p $(BUILD_DIR)/release
-	@cp $(BUILD_DIR)/$(BINARY_NAME)-* $(BUILD_DIR)/release/
-	@cp README.md $(BUILD_DIR)/release/
-	@cd $(BUILD_DIR) && tar -czf $(BINARY_NAME)-$(VERSION).tar.gz release/
-	@echo "Release package created: $(BUILD_DIR)/$(BINARY_NAME)-$(VERSION).tar.gz"
 
 # Build hubble-guard Docker image
 docker-build-guard:
@@ -204,7 +181,6 @@ help:
 	@echo "Available targets:"
 	@echo "  build              - Build the application"
 	@echo "  run                - Build and run the application"
-	@echo "  run-dev            - Run in development mode with debug logging"
 	@echo "  api-run            - Run API server (from root directory)"
 	@echo "  api-build          - Build API server binary"
 	@echo "  clean              - Clean build artifacts"
@@ -213,8 +189,6 @@ help:
 	@echo "  test-coverage      - Run tests with coverage report"
 	@echo "  fmt                - Format code"
 	@echo "  lint               - Lint code"
-	@echo "  build-all          - Build for multiple platforms"
-	@echo "  release            - Create release package"
 	@echo "  docker-build-guard - Build hubble-guard Docker image"
 	@echo "  docker-build-api   - Build hubble-guard-api Docker image"
 	@echo "  docker-build-ui    - Build hubble-guard-ui Docker image"

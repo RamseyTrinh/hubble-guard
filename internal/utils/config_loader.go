@@ -29,7 +29,6 @@ type ApplicationYAMLConfig struct {
 	HubbleServer        string `yaml:"hubble_server"`
 	PrometheusExportURL string `yaml:"prometheus_export_url"`
 	DefaultNamespace    string `yaml:"default_namespace"`
-	AutoStart           bool   `yaml:"auto_start"`
 }
 
 type PrometheusYAMLConfig struct {
@@ -201,7 +200,6 @@ func GetDefaultAnomalyDetectionConfig() *AnomalyDetectionConfig {
 			HubbleServer:        "localhost:4245",
 			PrometheusExportURL: "8080",
 			DefaultNamespace:    "default",
-			AutoStart:           false,
 		},
 		Prometheus: PrometheusYAMLConfig{
 			URL:               "http://localhost:9090",

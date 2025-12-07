@@ -3,7 +3,6 @@ application:
   hubble_server: "localhost:4245"
   prometheus_export_url: "8080"
   default_namespace: "default"
-  auto_start: false
 
 prometheus:
   url: "http://localhost:9090"

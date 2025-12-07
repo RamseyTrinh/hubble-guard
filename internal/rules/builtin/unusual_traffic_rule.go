@@ -13,7 +13,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// UnusualTrafficRule detects traffic from unusual/unauthorized sources to protected services
 type UnusualTrafficRule struct {
 	name           string
 	enabled        bool
@@ -32,7 +31,6 @@ type UnusualTrafficRule struct {
 	alertCooldown time.Duration
 }
 
-// NewUnusualTrafficRule creates a new unusual traffic detection rule
 func NewUnusualTrafficRule(enabled bool, severity string, promClient PrometheusQueryClient, logger *logrus.Logger) *UnusualTrafficRule {
 	return &UnusualTrafficRule{
 		name:          "unusual_traffic",
@@ -43,12 +41,11 @@ func NewUnusualTrafficRule(enabled bool, severity string, promClient PrometheusQ
 		interval:      10 * time.Second,
 		stopChan:      make(chan struct{}),
 		namespaces:    []string{"default"},
-		// Default allowed sources - demo-api should only be accessed by demo-frontend
 		allowedSources: map[string][]string{
 			"demo-api": {"demo-frontend"},
 		},
 		alertedPairs:  make(map[string]time.Time),
-		alertCooldown: 60 * time.Second, // 1 minute cooldown per source-dest pair
+		alertCooldown: 60 * time.Second,
 	}
 }
 
@@ -64,7 +61,6 @@ func (r *UnusualTrafficRule) SetNamespaces(namespaces []string) {
 	}
 }
 
-// SetAllowedSources configures which sources are allowed to access which destinations
 func (r *UnusualTrafficRule) SetAllowedSources(allowedSources map[string][]string) {
 	if allowedSources != nil {
 		r.allowedSources = allowedSources

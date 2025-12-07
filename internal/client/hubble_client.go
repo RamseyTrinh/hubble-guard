@@ -20,20 +20,7 @@ type HubbleGRPCClient struct {
 	metrics *PrometheusMetrics
 }
 
-func NewHubbleGRPCClient(server string) (*HubbleGRPCClient, error) {
-	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Hubble server: %v", err)
-	}
-
-	return &HubbleGRPCClient{
-		conn:    conn,
-		server:  server,
-		metrics: NewPrometheusMetrics(),
-	}, nil
-}
-
-func NewHubbleGRPCClientWithMetrics(server string, metrics *PrometheusMetrics) (*HubbleGRPCClient, error) {
+func NewHubbleGRPCClient(server string, metrics *PrometheusMetrics) (*HubbleGRPCClient, error) {
 	conn, err := grpc.Dial(server, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Hubble server: %v", err)
@@ -314,7 +301,7 @@ func extractServiceName(podName string) string {
 	return podName
 }
 
-func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
+func (c *HubbleGRPCClient) StreamFlowsWithMetrics(ctx context.Context, namespaces interface{}, flowCounter func(string), flowProcessor func(*model.Flow)) error {
 	fmt.Println("Starting to stream flows from Hubble relay with metrics")
 
 	var nsList []string
@@ -413,73 +400,6 @@ func (c *HubbleGRPCClient) StreamFlowsWithMetricsOnly(ctx context.Context, names
 				lastLogTime = time.Now()
 				flowCount = 0
 			}
-		}
-	}
-}
-
-func (c *HubbleGRPCClient) StreamFlowsWithMetrics(ctx context.Context, namespace string) error {
-	fmt.Println("Starting to stream flows from Hubble relay with metrics...")
-	if namespace != "" {
-		fmt.Printf("Filtering flows for namespace: %s\n", namespace)
-	}
-	fmt.Println(strings.Repeat("=", 80))
-
-	client := observer.NewObserverClient(c.conn)
-
-	req := &observer.GetFlowsRequest{
-		Follow: true,
-	}
-
-	if namespace != "" {
-		req.Whitelist = []*observer.FlowFilter{
-			{
-				SourceLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-			{
-				DestinationLabel: []string{"k8s:io.kubernetes.pod.namespace=" + namespace},
-			},
-		}
-	}
-
-	stream, err := client.GetFlows(ctx, req)
-	if err != nil {
-		if c.metrics != nil {
-			c.metrics.RecordConnectionError("stream_start_failed")
-		}
-		return fmt.Errorf("failed to start flow streaming: %v", err)
-	}
-
-	flowCount := 0
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println("\n Stopped streaming flows")
-			return nil
-		default:
-			response, err := stream.Recv()
-			if err == io.EOF {
-				fmt.Println(" Stream ended")
-				return nil
-			}
-			if err != nil {
-				if c.metrics != nil {
-					c.metrics.RecordConnectionError("stream_receive_failed")
-				}
-				return fmt.Errorf("failed to receive flow: %v", err)
-			}
-
-			flowCount++
-
-			flow := c.convertHubbleFlow(response.GetFlow())
-			if flow != nil {
-				if c.metrics != nil {
-					c.metrics.RecordFlow(flow)
-					c.recordAnomalyDetectionMetrics(flow)
-				}
-			}
-
-			c.printFlow(flowCount, response)
 		}
 	}
 }

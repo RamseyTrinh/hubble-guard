@@ -44,7 +44,7 @@ func main() {
 
 	// Create Hubble client for global streaming (used only by FlowBroadcaster)
 	var hubbleClient *client.HubbleGRPCClient
-	hubbleClient, err = client.NewHubbleGRPCClientWithMetrics(config.Application.HubbleServer, sharedMetrics)
+	hubbleClient, err = client.NewHubbleGRPCClient(config.Application.HubbleServer, sharedMetrics)
 	if err != nil {
 		logger.Warnf("Failed to create Hubble client for WebSocket streaming: %v", err)
 		logger.Warn("WebSocket flow streaming will not be available")

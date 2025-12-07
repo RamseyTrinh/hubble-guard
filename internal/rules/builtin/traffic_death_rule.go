@@ -113,7 +113,6 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 	if vector, ok := result.(prommodel.Vector); ok && len(vector) > 0 {
 		currentRate = float64(vector[0].Value)
 	} else {
-		// No data means rate is 0
 		currentRate = 0.0
 	}
 

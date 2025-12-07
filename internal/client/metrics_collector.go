@@ -24,24 +24,19 @@ type PrometheusMetrics struct {
 	TCPFlags       *prometheus.CounterVec
 	TCPBytes       *prometheus.CounterVec
 
-	// Error metrics
 	ConnectionErrors *prometheus.CounterVec
 
-	// Anomaly detection metrics
 	TrafficSpikeMultiplier *prometheus.GaugeVec
 	NewDestinations        *prometheus.CounterVec
 	ErrorResponseRate      *prometheus.CounterVec
 	TCPDropRate            *prometheus.CounterVec
 	PortScanDistinctPorts  *prometheus.GaugeVec
-	NamespaceAccess        *prometheus.CounterVec // Cross-namespace access tracking
-	SuspiciousOutbound     *prometheus.CounterVec // Suspicious outbound connections tracking
-	// Source-Destination traffic tracking (for unusual traffic detection)
-	SourceDestTraffic *prometheus.CounterVec
+	NamespaceAccess        *prometheus.CounterVec
+	SuspiciousOutbound     *prometheus.CounterVec
+	SourceDestTraffic      *prometheus.CounterVec
 
-	// Alert metrics
-	AlertCounter *prometheus.CounterVec // Total alerts detected
+	AlertCounter *prometheus.CounterVec
 
-	// Port scan tracking
 	portScanTracker *portScanTracker
 }
 
@@ -50,11 +45,10 @@ type portScanEntry struct {
 }
 
 type portScanTracker struct {
-	entries map[string]*portScanEntry
-	mu      sync.RWMutex
-	window  time.Duration
-	// Track which metrics need to be updated
-	metricKeys map[string]string // key -> "sourceIP:destIP:namespace"
+	entries    map[string]*portScanEntry
+	mu         sync.RWMutex
+	window     time.Duration
+	metricKeys map[string]string
 }
 
 func newPortScanTracker() *portScanTracker {
@@ -80,12 +74,7 @@ func (pst *portScanTracker) addPort(sourceIP, destIP string, port uint16) {
 		pst.entries[key] = entry
 	}
 
-	// Always update timestamp for this port (even if it already exists)
-	// This ensures the port stays in the window if it's accessed again
 	entry.ports[port] = now
-
-	// Don't cleanup here - let getDistinctPortCount handle cleanup
-	// This ensures all ports added in quick succession are counted correctly
 }
 
 func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
@@ -100,7 +89,6 @@ func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
 		return 0
 	}
 
-	// Count ports within window and cleanup old ones
 	count := 0
 	portsToDelete := []uint16{}
 	for port, timestamp := range entry.ports {
@@ -111,12 +99,10 @@ func (pst *portScanTracker) getDistinctPortCount(sourceIP, destIP string) int {
 		}
 	}
 
-	// Cleanup old ports
 	for _, port := range portsToDelete {
 		delete(entry.ports, port)
 	}
 
-	// Delete entry if no ports left
 	if len(entry.ports) == 0 {
 		delete(pst.entries, key)
 	}
@@ -266,7 +252,6 @@ func NewPrometheusMetrics() *PrometheusMetrics {
 	}
 }
 
-// Record metrics cho một flow
 func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 	if flow == nil {
 		return
@@ -279,29 +264,23 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 		namespace = flow.Destination.Namespace
 	}
 
-	// Flow total
 	m.FlowTotal.WithLabelValues(namespace).Inc()
 
-	// Flow by verdict
 	verdict := flow.Verdict.String()
 	m.FlowByVerdict.WithLabelValues(verdict, namespace).Inc()
 
-	// Flow by namespace
 	m.FlowByNamespace.WithLabelValues(namespace).Inc()
 
-	// Protocol metrics
 	if flow.L4 != nil {
 		if flow.L4.TCP != nil {
 			protocol := "tcp"
 			m.FlowByProtocol.WithLabelValues(protocol, namespace).Inc()
 
-			// TCP specific metrics
 			if flow.IP != nil {
 				sourceIP := flow.IP.Source
 				destIP := flow.IP.Destination
 				m.TCPConnections.WithLabelValues(namespace, sourceIP, destIP).Inc()
 
-				// TCP flags
 				if flow.L4.TCP.Flags != nil {
 					flags := flow.L4.TCP.Flags
 					if flags.SYN {
@@ -324,7 +303,6 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 					}
 				}
 
-				// TCP bytes
 				if flow.L4.TCP.Bytes > 0 {
 					m.TCPBytes.WithLabelValues(namespace, "outbound").Add(float64(flow.L4.TCP.Bytes))
 				}
@@ -335,12 +313,10 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 		}
 	}
 
-	// Namespace access tracking - track cross-namespace access
 	if flow.Source != nil && flow.Destination != nil {
 		sourceNS := flow.Source.Namespace
 		destNS := flow.Destination.Namespace
 
-		// Debug: log all namespace pairs
 		if sourceNS != "" && destNS != "" {
 		}
 
@@ -357,7 +333,6 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 		}
 	}
 
-	// Suspicious outbound tracking - track connections to suspicious ports
 	if flow.L4 != nil {
 		var destPort int
 		if flow.L4.TCP != nil {
@@ -366,7 +341,6 @@ func (m *PrometheusMetrics) RecordFlow(flow *model.Flow) {
 			destPort = int(flow.L4.UDP.DestinationPort)
 		}
 
-		// Check if port is suspicious
 		suspiciousPorts := map[int]bool{
 			22:   false, // SSH - may be suspicious depending on context
 			23:   true,  // Telnet - suspicious
@@ -426,7 +400,6 @@ func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP, namesp
 	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
 }
 
-// ResetPortScanMetric resets the port scan metric for a specific source-dest pair after alerting
 func (m *PrometheusMetrics) ResetPortScanMetric(sourceIP, destIP, namespace string) {
 	if m.portScanTracker == nil {
 		return

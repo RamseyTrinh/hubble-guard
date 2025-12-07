@@ -22,7 +22,7 @@ type PortScanRule struct {
 	stopChan        chan struct{}
 	alertEmitter    func(*model.Alert)
 	namespaces      []string
-	metricsResetter func(sourceIP, destIP, namespace string) // Reset metric after alert
+	metricsResetter func(sourceIP, destIP, namespace string)
 }
 
 func NewPortScanRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *PortScanRule {
@@ -42,7 +42,6 @@ func NewPortScanRule(enabled bool, severity string, threshold float64, promClien
 	}
 }
 
-// SetMetricsResetter sets a callback to reset port scan metrics after alerting
 func (r *PortScanRule) SetMetricsResetter(resetter func(sourceIP, destIP, namespace string)) {
 	r.metricsResetter = resetter
 }
@@ -149,7 +148,6 @@ func (r *PortScanRule) checkNamespace(ctx context.Context, namespace string) {
 				r.alertEmitter(alert)
 			}
 
-			// Reset metric after alerting to prevent repeated alerts
 			if r.metricsResetter != nil {
 				r.metricsResetter(sourceIP, destIP, namespace)
 				r.logger.Debugf("[Port Scan] Reset metric for %s -> %s in namespace %s", sourceIP, destIP, namespace)

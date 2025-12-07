@@ -12,8 +12,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-// BlockConnectionRule detects blocked connections by querying Prometheus metrics
-// Alerts when count(flows{verdict="DROP"}) > threshold in 1 minute
 type BlockConnectionRule struct {
 	name          string
 	enabled       bool
@@ -28,7 +26,6 @@ type BlockConnectionRule struct {
 	namespaces    []string
 }
 
-// NewBlockConnectionRule creates a new Block Connection rule that queries Prometheus
 func NewBlockConnectionRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *BlockConnectionRule {
 	if threshold <= 0 {
 		threshold = 10.0
