@@ -253,25 +253,18 @@ prometheus:
 # Grafana configuration
 grafana:
   replicaCount: 1
-  
   image:
     repository: grafana/grafana
     tag: "11.0.0"
     pullPolicy: IfNotPresent
-  
-  imagePullSecrets: []
-  
-  podAnnotations: {}
-  
-  podSecurityContext: {}
-  
-  securityContext: {}
-  
+
   adminUser: "admin"
   adminPassword: "admin"
-  rootUrl: ""
-  plugins: ""
   
+  # Subpath configuration
+  rootUrl: "%(protocol)s://%(domain)s/grafana/"
+  serveFromSubPath: true
+
   resources:
     limits:
       cpu: 500m
@@ -279,22 +272,13 @@ grafana:
     requests:
       cpu: 100m
       memory: 128Mi
-  
+
   persistence:
     enabled: false
-    size: 10Gi
-    storageClass: ""
-  
-  nodeSelector: {}
-  
-  tolerations: []
-  
-  affinity: {}
-  
+
   service:
     type: ClusterIP
     port: 3000
-    annotations: {}
 
 # UI configuration
 ui:
