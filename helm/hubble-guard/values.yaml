@@ -316,7 +316,7 @@ ui:
   image:
     repository: docker.io/ramseytrinh338/hubble-guard-ui
     tag: "latest"
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   
   imagePullSecrets: []
   
