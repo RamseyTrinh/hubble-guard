@@ -260,15 +260,10 @@ grafana:
 
   adminUser: "admin"
   adminPassword: "admin"
-
-  grafana.ini:
-    server:
-      root_url: "%(protocol)s://%(domain)s/grafana/"
-      serve_from_sub_path: true
-    security:
-      allow_embedding: true
-      cookie_secure: false
-      cookie_samesite: none
+  
+  # Subpath configuration
+  rootUrl: "%(protocol)s://%(domain)s/grafana/"
+  serveFromSubPath: true
 
   resources:
     limits:
