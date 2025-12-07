@@ -269,7 +269,11 @@ grafana:
   
   adminUser: "admin"
   adminPassword: "admin"
-  rootUrl: ""
+  # Root URL for Grafana when behind reverse proxy
+  # Use %(protocol)s://%(domain)s:%(http_port)s/grafana/ for dynamic resolution
+  # Or set a specific URL like http://your-domain/grafana/
+  rootUrl: "%(protocol)s://%(domain)s:%(http_port)s/grafana/"
+  serveFromSubPath: true
   plugins: ""
   
   resources:
