@@ -20,14 +20,6 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-func getVersion() string {
-	content, err := os.ReadFile("VERSION")
-	if err != nil {
-		return "unknown"
-	}
-	return strings.TrimSpace(string(content))
-}
-
 func main() {
 	var (
 		configFile = flag.String("config", "configs/anomaly_detection.yaml", "Configuration file path (YAML)")
@@ -48,7 +40,6 @@ func main() {
 	prometheusPort := config.GetPrometheusPort()
 	namespace := config.Application.DefaultNamespace
 
-	fmt.Printf("Anomaly Detector v%s\n", getVersion())
 	fmt.Printf("Connecting to Hubble relay at: %s\n", hubbleServer)
 	fmt.Printf("Prometheus query URL: %s\n", config.Prometheus.URL)
 	if len(config.Namespaces) > 0 {
@@ -135,7 +126,7 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.AnomalyDetection
 }
 
 func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.AnomalyDetectionConfig) {
-	fmt.Println("\n =============================================== ANOMALY DETECTOR v" + getVersion() + " ===============================================\n")
+	fmt.Println("\n =============================================== ANOMALY DETECTOR ===============================================\n")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
