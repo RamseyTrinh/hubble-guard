@@ -40,7 +40,7 @@ rules:
     description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
   
   - name: "port_scan"
-    enabled: true
+    enabled: false
     severity: "HIGH"
     description: "Phát hiện port scanning attacks"
     thresholds:
