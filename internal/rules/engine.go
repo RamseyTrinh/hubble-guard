@@ -91,6 +91,10 @@ func SetGlobalMetrics(metrics *client.PrometheusMetrics) {
 	globalMetrics = metrics
 }
 
+func GetGlobalMetrics() *client.PrometheusMetrics {
+	return globalMetrics
+}
+
 func RecordAlertMetrics(alert model.Alert) {
 	if globalMetrics != nil {
 		namespace := alert.Namespace

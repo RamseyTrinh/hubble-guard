@@ -12,16 +12,17 @@ import (
 )
 
 type PortScanRule struct {
-	name          string
-	enabled       bool
-	severity      string
-	threshold     float64
-	prometheusAPI PrometheusQueryClient
-	logger        *logrus.Logger
-	interval      time.Duration
-	stopChan      chan struct{}
-	alertEmitter  func(*model.Alert)
-	namespaces    []string
+	name            string
+	enabled         bool
+	severity        string
+	threshold       float64
+	prometheusAPI   PrometheusQueryClient
+	logger          *logrus.Logger
+	interval        time.Duration
+	stopChan        chan struct{}
+	alertEmitter    func(*model.Alert)
+	namespaces      []string
+	metricsResetter func(sourceIP, destIP, namespace string) // Reset metric after alert
 }
 
 func NewPortScanRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *PortScanRule {
@@ -39,6 +40,11 @@ func NewPortScanRule(enabled bool, severity string, threshold float64, promClien
 		stopChan:      make(chan struct{}),
 		namespaces:    []string{"default"},
 	}
+}
+
+// SetMetricsResetter sets a callback to reset port scan metrics after alerting
+func (r *PortScanRule) SetMetricsResetter(resetter func(sourceIP, destIP, namespace string)) {
+	r.metricsResetter = resetter
 }
 
 func (r *PortScanRule) SetAlertEmitter(emitter func(*model.Alert)) {
@@ -141,6 +147,12 @@ func (r *PortScanRule) checkNamespace(ctx context.Context, namespace string) {
 			r.logger.Warnf("Port Scan Rule Alert: %s", alert.Message)
 			if r.alertEmitter != nil {
 				r.alertEmitter(alert)
+			}
+
+			// Reset metric after alerting to prevent repeated alerts
+			if r.metricsResetter != nil {
+				r.metricsResetter(sourceIP, destIP, namespace)
+				r.logger.Debugf("[Port Scan] Reset metric for %s -> %s in namespace %s", sourceIP, destIP, namespace)
 			}
 		}
 	}

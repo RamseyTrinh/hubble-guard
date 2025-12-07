@@ -111,7 +111,7 @@ func (r *BlockConnectionRule) checkFromPrometheus(ctx context.Context) {
 }
 
 func (r *BlockConnectionRule) checkNamespace(ctx context.Context, namespace string) {
-	query := fmt.Sprintf(`sum(increase(hubble_flows_by_verdict_total{verdict="DROP", namespace="%s"}[1m]))`, namespace)
+	query := fmt.Sprintf(`sum(increase(hubble_flows_by_verdict_total{verdict="DROPPED", namespace="%s"}[1m]))`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
 	if err != nil {

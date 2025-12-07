@@ -426,6 +426,26 @@ func (m *PrometheusMetrics) UpdatePortScanDistinctPorts(sourceIP, destIP, namesp
 	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(float64(count))
 }
 
+// ResetPortScanMetric resets the port scan metric for a specific source-dest pair after alerting
+func (m *PrometheusMetrics) ResetPortScanMetric(sourceIP, destIP, namespace string) {
+	if m.portScanTracker == nil {
+		return
+	}
+
+	key := fmt.Sprintf("%s:%s", sourceIP, destIP)
+
+	m.portScanTracker.mu.Lock()
+	defer m.portScanTracker.mu.Unlock()
+
+	// Clear all tracked ports for this pair
+	if entry, exists := m.portScanTracker.entries[key]; exists {
+		entry.ports = make(map[uint16]time.Time)
+	}
+
+	// Reset the Prometheus metric to 0
+	m.PortScanDistinctPorts.WithLabelValues(sourceIP, destIP, namespace).Set(0)
+}
+
 // CleanupPortScanMetrics periodically cleans up old port scan metrics
 func (m *PrometheusMetrics) CleanupPortScanMetrics() {
 	if m.portScanTracker == nil {

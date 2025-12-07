@@ -28,6 +28,9 @@ type TrafficSpikeRule struct {
 	stopChan       chan struct{}
 	alertEmitter   func(*model.Alert)
 	namespaces     []string
+	// Alert cooldown
+	alertedNamespaces map[string]time.Time // key: namespace, value: last alert time
+	alertCooldown     time.Duration
 }
 
 type PrometheusQueryClient interface {
@@ -39,19 +42,21 @@ func NewTrafficSpikeRule(enabled bool, severity string, threshold float64, promC
 		threshold = 3.0
 	}
 	return &TrafficSpikeRule{
-		name:           "traffic_spike",
-		enabled:        enabled,
-		severity:       severity,
-		threshold:      threshold,
-		prometheusAPI:  promClient,
-		baseline:       make(map[string]float64),
-		baselineWindow: make(map[string]time.Duration),
-		baselineStart:  make(map[string]time.Time),
-		baselineRates:  make(map[string][]float64),
-		logger:         logger,
-		interval:       10 * time.Second,
-		stopChan:       make(chan struct{}),
-		namespaces:     []string{"default"},
+		name:              "traffic_spike",
+		enabled:           enabled,
+		severity:          severity,
+		threshold:         threshold,
+		prometheusAPI:     promClient,
+		baseline:          make(map[string]float64),
+		baselineWindow:    make(map[string]time.Duration),
+		baselineStart:     make(map[string]time.Time),
+		baselineRates:     make(map[string][]float64),
+		logger:            logger,
+		interval:          10 * time.Second,
+		stopChan:          make(chan struct{}),
+		namespaces:        []string{"default"},
+		alertedNamespaces: make(map[string]time.Time),
+		alertCooldown:     60 * time.Second,
 	}
 }
 
@@ -180,6 +185,17 @@ func (r *TrafficSpikeRule) checkNamespace(ctx context.Context, namespace string)
 	r.logger.Infof("[Traffic Spike] Namespace: %s | Current rate: %.2f flows/sec | Baseline: %.2f flows/sec | Multiplier: %.2fx", namespace, currentRate, baseline, multiplier)
 
 	if multiplier > r.threshold {
+		// Check cooldown before alerting
+		lastAlertTime, exists := r.alertedNamespaces[namespace]
+		if exists && time.Since(lastAlertTime) < r.alertCooldown {
+			r.logger.Debugf("[Traffic Spike] Alert for namespace %s in cooldown, skipping (last alert: %v ago)",
+				namespace, time.Since(lastAlertTime).Round(time.Second))
+			return
+		}
+
+		// Update last alert time
+		r.alertedNamespaces[namespace] = time.Now()
+
 		alert := &model.Alert{
 			Type:      r.name,
 			Severity:  r.severity,

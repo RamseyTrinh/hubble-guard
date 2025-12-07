@@ -16,7 +16,6 @@ type OutboundRule struct {
 	name            string
 	enabled         bool
 	severity        string
-	threshold       float64
 	suspiciousPorts map[int]bool
 	prometheusAPI   PrometheusQueryClient
 	logger          *logrus.Logger
@@ -25,13 +24,12 @@ type OutboundRule struct {
 	stopChan        chan struct{}
 	alertEmitter    func(*model.Alert)
 	namespaces      []string
+	// Alert cooldown tracking
+	alertedPorts  map[string]time.Time // key: "namespace:port"
+	alertCooldown time.Duration
 }
 
-func NewOutboundRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *OutboundRule {
-	if threshold <= 0 {
-		threshold = 10.0
-	}
-
+func NewOutboundRule(enabled bool, severity string, promClient PrometheusQueryClient, logger *logrus.Logger) *OutboundRule {
 	suspiciousPorts := map[int]bool{
 		22:   false, // SSH - may be suspicious depending on context
 		23:   true,  // Telnet - suspicious
@@ -46,13 +44,14 @@ func NewOutboundRule(enabled bool, severity string, threshold float64, promClien
 		name:            "suspicious_outbound",
 		enabled:         enabled,
 		severity:        severity,
-		threshold:       threshold,
 		suspiciousPorts: suspiciousPorts,
 		prometheusAPI:   promClient,
 		logger:          logger,
 		interval:        10 * time.Second,
 		stopChan:        make(chan struct{}),
 		namespaces:      []string{"default"},
+		alertedPorts:    make(map[string]time.Time),
+		alertCooldown:   60 * time.Second,
 	}
 }
 
@@ -86,7 +85,7 @@ func (r *OutboundRule) Start(ctx context.Context) {
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
 
-	r.logger.Infof("[Suspicious Outbound] Starting periodic checks from Prometheus (interval: %v, threshold: %.0f)", r.interval, r.threshold)
+	r.logger.Infof("[Suspicious Outbound] Starting periodic checks from Prometheus (interval: %v) - alerts on ANY connection to dangerous ports", r.interval)
 
 	for {
 		select {
@@ -134,11 +133,12 @@ func (r *OutboundRule) checkNamespace(ctx context.Context, namespace string, sus
 			continue
 		}
 
-		query := fmt.Sprintf(`sum(increase(hubble_suspicious_outbound_total{namespace="%s", destination_port="%d"}[1m]))`, namespace, port)
+		// Query for any increase in connections to this port in the last 1 minute
+		query := fmt.Sprintf(`sum(increase(hubble_suspicious_outbound_total{namespace="%s"}[1m]))`, namespace)
 
 		result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
 		if err != nil {
-			r.logger.Errorf("[Suspicious Outbound] Failed to query Prometheus for namespace %s, port %d: %v", namespace, port, err)
+			r.logger.Errorf("[Suspicious Outbound] Failed to query Prometheus for namespace %s: %v", namespace, err)
 			continue
 		}
 
@@ -146,18 +146,34 @@ func (r *OutboundRule) checkNamespace(ctx context.Context, namespace string, sus
 		if vector, ok := result.(prommodel.Vector); ok && len(vector) > 0 {
 			count = float64(vector[0].Value)
 		} else {
-			r.logger.Debugf("[Suspicious Outbound] No suspicious outbound connections from Prometheus for namespace %s, port %d", namespace, port)
 			continue
 		}
 
-		r.logger.Debugf("[Suspicious Outbound] Namespace: %s | Port: %d | Connections in last 1m: %.0f (threshold: %.0f)", namespace, port, count, r.threshold)
+		// Alert on ANY connection (count > 0) to dangerous port
+		if count > 0 {
+			alertKey := fmt.Sprintf("%s:%d", namespace, port)
 
-		if count > r.threshold {
+			// Check cooldown
+			r.mu.RLock()
+			lastAlert, exists := r.alertedPorts[alertKey]
+			r.mu.RUnlock()
+
+			if exists && time.Since(lastAlert) < r.alertCooldown {
+				r.logger.Debugf("[Suspicious Outbound] Alert for %s in cooldown, skipping", alertKey)
+				continue
+			}
+
+			// Update cooldown
+			r.mu.Lock()
+			r.alertedPorts[alertKey] = time.Now()
+			r.mu.Unlock()
+
+			portName := r.getPortName(port)
 			alert := &model.Alert{
 				Type:      r.name,
 				Severity:  r.severity,
 				Namespace: namespace,
-				Message:   fmt.Sprintf("Suspicious outbound connection detected in namespace %s: %.0f connections to port %d in 1 minute (threshold: %.0f)", namespace, count, port, r.threshold),
+				Message:   fmt.Sprintf("⚠️ Suspicious outbound connection detected: %.0f connection(s) to port %d (%s) from namespace %s", count, port, portName, namespace),
 				Timestamp: time.Now(),
 			}
 			r.logger.Warnf("Suspicious Outbound Rule Alert: %s", alert.Message)
@@ -166,4 +182,20 @@ func (r *OutboundRule) checkNamespace(ctx context.Context, namespace string, sus
 			}
 		}
 	}
+}
+
+func (r *OutboundRule) getPortName(port int) string {
+	names := map[int]string{
+		22:   "SSH",
+		23:   "Telnet",
+		135:  "RPC",
+		445:  "SMB",
+		1433: "SQL Server",
+		3306: "MySQL",
+		5432: "PostgreSQL",
+	}
+	if name, ok := names[port]; ok {
+		return name
+	}
+	return "Unknown"
 }

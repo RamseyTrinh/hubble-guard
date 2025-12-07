@@ -338,6 +338,12 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				portScanRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
 				})
+				// Set metrics resetter to reset port scan metric after alerting
+				portScanRule.SetMetricsResetter(func(sourceIP, destIP, namespace string) {
+					if metrics := rules.GetGlobalMetrics(); metrics != nil {
+						metrics.ResetPortScanMetric(sourceIP, destIP, namespace)
+					}
+				})
 				engine.RegisterRule(portScanRule)
 				ctx := context.Background()
 				go portScanRule.Start(ctx)
@@ -346,18 +352,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 
 		case "suspicious_outbound":
 			if promClient != nil {
-				threshold := 10.0
-				if thresholds, ok := ruleConfig.Thresholds["per_minute"].(float64); ok {
-					threshold = thresholds
-				} else if thresholds, ok := ruleConfig.Thresholds["per_minute"].(int); ok {
-					threshold = float64(thresholds)
-				} else if thresholds, ok := ruleConfig.Thresholds["threshold"].(float64); ok {
-					threshold = thresholds
-				} else if thresholds, ok := ruleConfig.Thresholds["threshold"].(int); ok {
-					threshold = float64(thresholds)
-				}
-
-				outboundRule := builtin.NewOutboundRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				outboundRule := builtin.NewOutboundRule(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
 				outboundRule.SetNamespaces(yamlConfig.Namespaces)
 				outboundRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
@@ -365,7 +360,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				engine.RegisterRule(outboundRule)
 				ctx := context.Background()
 				go outboundRule.Start(ctx)
-				logger.Infof("Registered rule: %s (threshold: %.0f connections per minute)", ruleConfig.Name, threshold)
+				logger.Infof("Registered rule: %s (alerts on ANY connection to dangerous ports)", ruleConfig.Name)
 			}
 
 		case "namespace_access":
