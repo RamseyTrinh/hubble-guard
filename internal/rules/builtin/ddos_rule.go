@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	"github.com/sirupsen/logrus"
 )
@@ -15,15 +15,15 @@ type DDoSRule struct {
 	name           string
 	enabled        bool
 	severity       string
-	threshold      float64 // Multiplier threshold (e.g., 3.0x baseline)
+	threshold      float64
 	flowCounts     map[string]int64
 	baseline       map[string]float64
 	lastReset      map[string]time.Time
 	baselineStart  map[string]time.Time
 	logger         *logrus.Logger
 	mu             sync.RWMutex
-	window         time.Duration // Time window for counting flows (e.g., 1 minute)
-	baselineWindow time.Duration // Time window for baseline calculation (e.g., 5 minutes)
+	window         time.Duration
+	baselineWindow time.Duration
 	alertEmitter   func(*model.Alert)
 }
 
@@ -41,8 +41,8 @@ func NewDDoSRule(enabled bool, severity string, threshold float64, logger *logru
 		lastReset:      make(map[string]time.Time),
 		baselineStart:  make(map[string]time.Time),
 		logger:         logger,
-		window:         10 * time.Second, // Check every 10 seconds
-		baselineWindow: 1 * time.Minute,  // Collect baseline for 1 minute
+		window:         10 * time.Second,
+		baselineWindow: 1 * time.Minute,
 	}
 }
 
@@ -75,7 +75,6 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Initialize baseline collection if needed
 	baselineStart, baselineExists := r.baselineStart[namespace]
 	if !baselineExists {
 		r.baselineStart[namespace] = now

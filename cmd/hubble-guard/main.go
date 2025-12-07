@@ -10,34 +10,21 @@ import (
 	"syscall"
 	"time"
 
-	"hubble-anomaly-detector/internal/alert"
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
-	"hubble-anomaly-detector/internal/pipeline"
-	"hubble-anomaly-detector/internal/rules"
-	"hubble-anomaly-detector/internal/utils"
+	"hubble-guard/internal/alert"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
+	"hubble-guard/internal/pipeline"
+	"hubble-guard/internal/rules"
+	"hubble-guard/internal/utils"
 
 	"github.com/sirupsen/logrus"
 )
 
 func main() {
 	var (
-		configFile   = flag.String("config", "configs/anomaly_detection.yaml", "Configuration file path (YAML)")
-		showVersion  = flag.Bool("version", false, "Show version information")
-		testTelegram = flag.Bool("test-telegram", false, "Send test message to Telegram")
+		configFile = flag.String("config", "configs/anomaly_detection.yaml", "Configuration file path (YAML)")
 	)
 	flag.Parse()
-
-	if *showVersion {
-		fmt.Println("Hubble Anomaly Detector v1.0.0")
-		return
-	}
-
-	if *testTelegram {
-		fmt.Println("Testing Telegram notification...")
-		testTelegramNotification(*configFile)
-		return
-	}
 
 	// Load configuration from YAML file
 	config, err := utils.LoadAnomalyDetectionConfig(*configFile)
@@ -46,16 +33,14 @@ func main() {
 		fmt.Println("Using default configuration...")
 		config = utils.GetDefaultAnomalyDetectionConfig()
 	} else {
-		fmt.Printf("✅ Loaded configuration from %s\n", *configFile)
+		fmt.Printf("Loaded configuration from %s\n", *configFile)
 	}
 
 	hubbleServer := config.Application.HubbleServer
 	prometheusPort := config.GetPrometheusPort()
 	namespace := config.Application.DefaultNamespace
 
-	fmt.Println("Hubble Anomaly Detector")
 	fmt.Printf("Connecting to Hubble relay at: %s\n", hubbleServer)
-	fmt.Printf("Prometheus export URL: %s\n", prometheusPort)
 	fmt.Printf("Prometheus query URL: %s\n", config.Prometheus.URL)
 	if len(config.Namespaces) > 0 {
 		fmt.Printf("Monitoring namespaces: %s\n", strings.Join(config.Namespaces, ", "))
@@ -80,7 +65,7 @@ func main() {
 		}
 	}()
 
-	hubbleClient, err := client.NewHubbleGRPCClientWithMetrics(hubbleServer, exporter.GetMetrics())
+	hubbleClient, err := client.NewHubbleGRPCClient(hubbleServer, exporter.GetMetrics())
 	if err != nil {
 		fmt.Printf("Failed to create client: %v\n", err)
 		exporterCancel()
@@ -92,7 +77,6 @@ func main() {
 	promClient, err := client.NewPrometheusClient(config.Prometheus.URL)
 	if err != nil {
 		fmt.Printf("Warning: Failed to create Prometheus client: %v\n", err)
-		fmt.Println("Rules will not be able to query Prometheus...")
 		promClient = nil
 	}
 
@@ -107,7 +91,6 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	if err := hubbleClient.TestConnection(ctx); err != nil {
 		fmt.Printf("Warning: Connection test failed: %v\n", err)
-		fmt.Println("Continuing anyway...")
 	}
 	cancel()
 
@@ -119,7 +102,6 @@ func main() {
 	}
 
 	streamFlowsToPrometheus(hubbleClient, namespaces, engine, logger, config)
-
 }
 
 func registerAlertNotifiers(engine *rules.Engine, config *utils.AnomalyDetectionConfig, logger *logrus.Logger) {
@@ -144,7 +126,7 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.AnomalyDetection
 }
 
 func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.AnomalyDetectionConfig) {
-	fmt.Println("\n =============================================== ANOMALY DETECTION ===============================================\n")
+	fmt.Println("\n =============================================== ANOMALY DETECTOR ===============================================\n")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -188,7 +170,7 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 	// Create processor to evaluate flows with rules
 	processor := pipeline.NewProcessor(engine)
 
-	err := hubbleClient.StreamFlowsWithMetricsOnly(ctx, namespaces, func(ns string) {
+	err := hubbleClient.StreamFlowsWithMetrics(ctx, namespaces, func(ns string) {
 	}, func(flow *model.Flow) {
 		// Process flow through engine to evaluate rules
 		if err := processor.Process(ctx, flow); err != nil {
@@ -202,37 +184,4 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 			fmt.Printf("Flow streaming failed: %v\n", err)
 		}
 	}
-}
-
-func testTelegramNotification(configFile string) {
-	config, err := utils.LoadAnomalyDetectionConfig(configFile)
-	if err != nil {
-		fmt.Printf("Failed to load config file %s: %v\n", configFile, err)
-		fmt.Println("Using default configuration...")
-		config = utils.GetDefaultAnomalyDetectionConfig()
-	}
-
-	logger := utils.NewLogger(config.Logging.Level)
-	logger.SetLevel(logrus.InfoLevel)
-
-	telegramNotifier := alert.NewTelegramNotifier(
-		config.Alerting.Telegram.BotToken,
-		config.Alerting.Telegram.ChatID,
-		config.Alerting.Telegram.ParseMode,
-		config.Alerting.Telegram.Enabled,
-		logger,
-	)
-
-	if !telegramNotifier.IsEnabled() {
-		fmt.Println("❌ Telegram notifier is disabled in configuration")
-		return
-	}
-
-	fmt.Println("Sending test message to Telegram...")
-	if err := telegramNotifier.SendTestMessage(); err != nil {
-		fmt.Printf("❌ Failed to send test message: %v\n", err)
-		return
-	}
-
-	fmt.Println("✅ Test message sent successfully to Telegram!")
 }

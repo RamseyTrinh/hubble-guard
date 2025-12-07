@@ -122,13 +122,33 @@ data:
           </div>
           <div class="scenario-card">
             <h3>Port Scan <span class="rule-badge">port_scan</span></h3>
-            <p>Quét nhiều port khác nhau để test Port Scan Rule</p>
-            <button id="portscan">Start Port Scan</button>
+            <p>Dùng nmap/netcat từ attacker pod</p>
+            <button id="portscan-toggle" style="background:#9c27b0;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="portscan-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;" title="Click to copy"></div>
           </div>
           <div class="scenario-card">
             <h3>Suspicious Out<span class="rule-badge">suspicious_out</span></h3>
-            <p>Traffic đến các port đáng ngờ (cần cấu hình network)</p>
-            <button id="suspicious">Start Suspicious</button>
+            <p>Kết nối đến các port DB: 1433, 3306, 5432</p>
+            <button id="suspicious-toggle" style="background:#e91e63;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="suspicious-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
+          </div>
+          <div class="scenario-card">
+            <h3>Unusual Traffic <span class="rule-badge">unusual</span></h3>
+            <p>Attacker pod giao tiếp với demo-api</p>
+            <button id="unusual-toggle" style="background:#00bcd4;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="unusual-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
+          </div>
+          <div class="scenario-card">
+            <h3>Namespace Access <span class="rule-badge">ns_access</span></h3>
+            <p>Attacker truy cập kube-system namespace</p>
+            <button id="nsaccess-toggle" style="background:#673ab7;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="nsaccess-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
+          </div>
+          <div class="scenario-card">
+            <h3>Blocked Connection <span class="rule-badge">block_conn</span></h3>
+            <p>Attacker truy cập protected-api (bị NetworkPolicy block)</p>
+            <button id="blocked-toggle" style="background:#d32f2f;color:white;width:100%;margin-top:8px;">▼ Show Command</button>
+            <div id="blocked-cmd" style="display:none;font-size:10px;background:#222;color:#0f0;padding:8px;margin-top:8px;border-radius:4px;font-family:monospace;cursor:pointer;"></div>
           </div>
         </div>
 
@@ -279,60 +299,109 @@ data:
           timers.push(timer);
         };
 
-        // Port Scan - Simulate scanning multiple ports
-        document.getElementById('portscan').onclick = () => {
-          clearAllTimers();
-          activeScenario = 'portscan';
-          log('Starting Port Scan scenario (scanning multiple endpoints rapidly)', 'warning');
-          const endpoints = ['status/200', 'status/204', 'status/404', 'delay/0.1', 'delay/0.5', 'delay/1.0', 'status/500'];
-          let endpointIndex = 0;
-          const timer = setInterval(() => {
-            if (activeScenario !== 'portscan') {
-              clearInterval(timer);
-              return;
-            }
-            // Send to different endpoints rapidly to simulate port scanning
-            for (let i = 0; i < 15; i++) {
-              const endpoint = endpoints[(endpointIndex + i) % endpoints.length];
-              const timeoutId = setTimeout(() => {
-                if (activeScenario === 'portscan') {
-                  send(endpoint);
-                }
-              }, i * 5);
-              timeouts.push(timeoutId);
-            }
-            endpointIndex = (endpointIndex + 1) % endpoints.length;
-            log(`Port scan batch sent (15 requests to different endpoints)`, 'warning');
-          }, 200); // Every 200ms
-          timers.push(timer);
+        // Port Scan - Toggle show/hide command
+        document.getElementById('portscan-toggle').onclick = function() {
+          const cmdEl = document.getElementById('portscan-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br># 1. Lấy Pod IP của demo-api<br><br># 2. Scan Pod IP (không qua Service)<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('POD_IP=$(kubectl get pod -l app=demo-api -o jsonpath=\'{.items[0].status.podIP}\') && echo "Scanning Pod IP: $POD_IP" && kubectl exec -it attacker -- nmap -sT -p 1-100 $POD_IP');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#9c27b0';
+          }
         };
 
-        // Suspicious Outbound - Attempt connections to suspicious patterns
-        document.getElementById('suspicious').onclick = () => {
-          clearAllTimers();
-          activeScenario = 'suspicious';
-          log('Starting Suspicious Outbound scenario (note: requires network-level testing)', 'warning');
-          // Use endpoints that won't trigger auth modals (avoid 401, 403)
-          // Note: Actual port-level detection requires network policies/Cilium
-          // Using 500, 502, 503 instead to avoid auth modals
-          const suspiciousPaths = ['status/500', 'status/502', 'status/503', 'status/504'];
-          const timer = setInterval(() => {
-            if (activeScenario !== 'suspicious') {
-              clearInterval(timer);
-              return;
-            }
-            // Send to suspicious endpoints
-            for (let i = 0; i < 10; i++) {
-              const timeoutId = setTimeout(() => {
-                if (activeScenario === 'suspicious') {
-                  send(pick(suspiciousPaths));
-                }
-              }, i * 20);
-              timeouts.push(timeoutId);
-            }
-            log('Suspicious outbound batch sent', 'warning');
-          }, 1000);
-          timers.push(timer);
+        // Unusual Traffic - Toggle show/hide command
+        document.getElementById('unusual-toggle').onclick = function() {
+          const cmdEl = document.getElementById('unusual-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s http://demo-api.default.svc.cluster.local/status/200; sleep 1; done"<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s http://demo-api.default.svc.cluster.local/status/200; sleep 1; done"');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#00bcd4';
+          }
+        };
+
+        // Namespace Access - Toggle show/hide command
+        document.getElementById('nsaccess-toggle').onclick = function() {
+          const cmdEl = document.getElementById('nsaccess-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- sh -c "for i in 1 2; do curl -s http://target-api.test-demo.svc.cluster.local/status/200; sleep 1; done"<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- sh -c "for i in 1 2; do curl -s http://target-api.test-demo.svc.cluster.local/status/200; sleep 1; done"');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#673ab7';
+          }
+        };
+
+        // Blocked Connection - Toggle show/hide command
+        document.getElementById('blocked-toggle').onclick = function() {
+          const cmdEl = document.getElementById('blocked-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s --connect-timeout 2 http://protected-api.default.svc.cluster.local/status/200 2>/dev/null || echo timeout; sleep 1; done"<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- sh -c "for i in 1 2 3; do curl -s --connect-timeout 2 http://protected-api.default.svc.cluster.local/status/200 2>/dev/null || echo timeout; sleep 1; done"');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#d32f2f';
+          }
+        };
+
+        // Suspicious Outbound - Toggle show/hide command
+        document.getElementById('suspicious-toggle').onclick = function() {
+          const cmdEl = document.getElementById('suspicious-cmd');
+          const toggleBtn = this;
+          
+          if (cmdEl.style.display === 'none') {
+            cmdEl.innerHTML = '<br>kubectl exec -it attacker -- sh -c "for port in 1433 3306 5432; do nc -zv -w1 8.8.8.8 \\$port 2>&1; done"<br><br><i>Click here to copy</i>';
+            cmdEl.style.display = 'block';
+            cmdEl.onclick = () => {
+              navigator.clipboard.writeText('kubectl exec -it attacker -- sh -c "for port in 1433 3306 5432; do nc -zv -w1 8.8.8.8 \\$port 2>&1; done"');
+              log('Copied! Run in terminal', 'success');
+            };
+            toggleBtn.innerHTML = '▲ Hide Command';
+            toggleBtn.style.background = '#757575';
+          } else {
+            cmdEl.style.display = 'none';
+            toggleBtn.innerHTML = '▼ Show Command';
+            toggleBtn.style.background = '#e91e63';
+          }
         };
 
         // Stop All
@@ -403,3 +472,140 @@ spec:
       port: 80
       targetPort: 8080
       protocol: TCP
+---
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: attacker
+  namespace: default
+  labels:
+    app: attacker
+    role: security-testing
+spec:
+  containers:
+    - name: attacker
+      image: nicolaka/netshoot:latest
+      command: ["sleep", "infinity"]
+      resources:
+        limits:
+          memory: "256Mi"
+          cpu: "500m"
+        requests:
+          memory: "128Mi"
+          cpu: "100m"
+      securityContext:
+        capabilities:
+          add:
+            - NET_RAW      # Required for nmap SYN scan, ping, etc.
+            - NET_ADMIN    # Required for tcpdump, iptables, etc.
+  restartPolicy: Always
+---
+# Namespace for cross-namespace access testing
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: test-demo
+  labels:
+    purpose: security-testing
+---
+# Target pod in test-demo namespace
+apiVersion: v1
+kind: Pod
+metadata:
+  name: target-api
+  namespace: test-demo
+  labels:
+    app: target-api
+spec:
+  containers:
+    - name: api
+      image: mccutchen/go-httpbin:v2.14.0
+      ports:
+        - containerPort: 8080
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "200m"
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+  restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: target-api
+  namespace: test-demo
+  labels:
+    app: target-api
+spec:
+  selector:
+    app: target-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+---
+# Protected API - Only allows traffic from demo-frontend, blocks all others
+apiVersion: v1
+kind: Pod
+metadata:
+  name: protected-api
+  namespace: default
+  labels:
+    app: protected-api
+    protection: enabled
+spec:
+  containers:
+    - name: api
+      image: mccutchen/go-httpbin:v2.14.0
+      ports:
+        - containerPort: 8080
+      resources:
+        limits:
+          memory: "128Mi"
+          cpu: "200m"
+        requests:
+          memory: "64Mi"
+          cpu: "50m"
+  restartPolicy: Always
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: protected-api
+  namespace: default
+  labels:
+    app: protected-api
+spec:
+  selector:
+    app: protected-api
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+---
+# NetworkPolicy - Only allow traffic from demo-frontend to protected-api
+# All other traffic (including from attacker) will be DROPPED by Cilium
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: protected-api-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: protected-api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: demo-frontend
+      ports:
+        - protocol: TCP
+          port: 8080

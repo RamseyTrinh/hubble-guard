@@ -4,7 +4,6 @@ import (
 	"time"
 )
 
-// Flow represents a network flow
 type Flow struct {
 	Time        *time.Time `json:"time,omitempty"`
 	Verdict     Verdict    `json:"verdict"`

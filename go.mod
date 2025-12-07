@@ -1,4 +1,4 @@
-module hubble-anomaly-detector
+module hubble-guard
 
 go 1.24.0
 

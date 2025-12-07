@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
-	"hubble-anomaly-detector/internal/rules"
-	"hubble-anomaly-detector/internal/rules/builtin"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
+	"hubble-guard/internal/rules"
+	"hubble-guard/internal/rules/builtin"
 
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
@@ -29,7 +29,6 @@ type ApplicationYAMLConfig struct {
 	HubbleServer        string `yaml:"hubble_server"`
 	PrometheusExportURL string `yaml:"prometheus_export_url"`
 	DefaultNamespace    string `yaml:"default_namespace"`
-	AutoStart           bool   `yaml:"auto_start"`
 }
 
 type PrometheusYAMLConfig struct {
@@ -201,7 +200,6 @@ func GetDefaultAnomalyDetectionConfig() *AnomalyDetectionConfig {
 			HubbleServer:        "localhost:4245",
 			PrometheusExportURL: "8080",
 			DefaultNamespace:    "default",
-			AutoStart:           false,
 		},
 		Prometheus: PrometheusYAMLConfig{
 			URL:               "http://localhost:9090",
@@ -338,6 +336,12 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				portScanRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
 				})
+				// Set metrics resetter to reset port scan metric after alerting
+				portScanRule.SetMetricsResetter(func(sourceIP, destIP, namespace string) {
+					if metrics := rules.GetGlobalMetrics(); metrics != nil {
+						metrics.ResetPortScanMetric(sourceIP, destIP, namespace)
+					}
+				})
 				engine.RegisterRule(portScanRule)
 				ctx := context.Background()
 				go portScanRule.Start(ctx)
@@ -346,18 +350,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 
 		case "suspicious_outbound":
 			if promClient != nil {
-				threshold := 10.0
-				if thresholds, ok := ruleConfig.Thresholds["per_minute"].(float64); ok {
-					threshold = thresholds
-				} else if thresholds, ok := ruleConfig.Thresholds["per_minute"].(int); ok {
-					threshold = float64(thresholds)
-				} else if thresholds, ok := ruleConfig.Thresholds["threshold"].(float64); ok {
-					threshold = thresholds
-				} else if thresholds, ok := ruleConfig.Thresholds["threshold"].(int); ok {
-					threshold = float64(thresholds)
-				}
-
-				outboundRule := builtin.NewOutboundRule(ruleConfig.Enabled, ruleConfig.Severity, threshold, promClient, logger)
+				outboundRule := builtin.NewOutboundRule(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
 				outboundRule.SetNamespaces(yamlConfig.Namespaces)
 				outboundRule.SetAlertEmitter(func(alert *model.Alert) {
 					engine.EmitAlert(*alert)
@@ -365,7 +358,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				engine.RegisterRule(outboundRule)
 				ctx := context.Background()
 				go outboundRule.Start(ctx)
-				logger.Infof("Registered rule: %s (threshold: %.0f connections per minute)", ruleConfig.Name, threshold)
+				logger.Infof("Registered rule: %s (alerts on ANY connection to dangerous ports)", ruleConfig.Name)
 			}
 
 		case "namespace_access":
@@ -412,6 +405,42 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 				ctx := context.Background()
 				go nsAccessRule.Start(ctx)
 				logger.Infof("Registered rule: %s (forbidden namespaces: %v)", ruleConfig.Name, forbiddenNS)
+			}
+
+		case "unusual_traffic":
+			if promClient != nil {
+				// Parse allowed_sources from thresholds
+				var allowedSources map[string][]string
+				if sourcesConfig, ok := ruleConfig.Thresholds["allowed_sources"].(map[string]interface{}); ok {
+					allowedSources = make(map[string][]string)
+					for service, sources := range sourcesConfig {
+						if sourceList, ok := sources.([]interface{}); ok {
+							for _, src := range sourceList {
+								if srcStr, ok := src.(string); ok {
+									allowedSources[service] = append(allowedSources[service], srcStr)
+								}
+							}
+						} else if sourceList, ok := sources.([]string); ok {
+							allowedSources[service] = sourceList
+						}
+					}
+				}
+
+				unusualRule := builtin.NewUnusualTrafficRule(ruleConfig.Enabled, ruleConfig.Severity, promClient, logger)
+				unusualRule.SetNamespaces(yamlConfig.Namespaces)
+				if len(allowedSources) > 0 {
+					unusualRule.SetAllowedSources(allowedSources)
+					logger.Infof("Unusual Traffic Rule: configured allowed sources: %v", allowedSources)
+				} else {
+					logger.Infof("Unusual Traffic Rule: using default allowed sources (demo-api: [demo-frontend])")
+				}
+				unusualRule.SetAlertEmitter(func(alert *model.Alert) {
+					engine.EmitAlert(*alert)
+				})
+				engine.RegisterRule(unusualRule)
+				ctx := context.Background()
+				go unusualRule.Start(ctx)
+				logger.Infof("Registered rule: %s", ruleConfig.Name)
 			}
 
 		default:

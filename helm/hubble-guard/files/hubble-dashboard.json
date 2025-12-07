@@ -1610,7 +1610,7 @@
   },
   "timezone": "browser",
   "title": "Hubble Anomaly Detector - Network Monitoring Dashboard",
-  "uid": "hubble-anomaly-detector",
+  "uid": "hubble-guard",
   "version": 3,
   "weekStart": ""
 }

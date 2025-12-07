@@ -10,7 +10,7 @@ import (
 	"text/template"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	"github.com/sirupsen/logrus"
 )
@@ -222,7 +222,7 @@ func (tn *TelegramNotifier) SendTestMessage() error {
 		return fmt.Errorf("telegram notifier is disabled")
 	}
 
-	message := "🤖 Test Message\n\nAnomaly Detector is working correctly!"
+	message := "Test Message\n\nAnomaly Detector is working correctly!"
 	return tn.sendMessage(message)
 }
 

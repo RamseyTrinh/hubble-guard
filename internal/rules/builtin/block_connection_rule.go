@@ -6,14 +6,12 @@ import (
 	"sync"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	prommodel "github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
 )
 
-// BlockConnectionRule detects blocked connections by querying Prometheus metrics
-// Alerts when count(flows{verdict="DROP"}) > threshold in 1 minute
 type BlockConnectionRule struct {
 	name          string
 	enabled       bool
@@ -28,7 +26,6 @@ type BlockConnectionRule struct {
 	namespaces    []string
 }
 
-// NewBlockConnectionRule creates a new Block Connection rule that queries Prometheus
 func NewBlockConnectionRule(enabled bool, severity string, threshold float64, promClient PrometheusQueryClient, logger *logrus.Logger) *BlockConnectionRule {
 	if threshold <= 0 {
 		threshold = 10.0
@@ -111,7 +108,7 @@ func (r *BlockConnectionRule) checkFromPrometheus(ctx context.Context) {
 }
 
 func (r *BlockConnectionRule) checkNamespace(ctx context.Context, namespace string) {
-	query := fmt.Sprintf(`sum(increase(hubble_flows_by_verdict_total{verdict="DROP", namespace="%s"}[1m]))`, namespace)
+	query := fmt.Sprintf(`sum(increase(hubble_flows_by_verdict_total{verdict="DROPPED", namespace="%s"}[1m]))`, namespace)
 
 	result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
 	if err != nil {

@@ -11,10 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"hubble-anomaly-detector/api/internal/handlers"
-	"hubble-anomaly-detector/api/internal/storage"
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/utils"
+	"hubble-guard/api/internal/handlers"
+	"hubble-guard/api/internal/storage"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/utils"
 
 	"github.com/gorilla/mux"
 	"github.com/sirupsen/logrus"
@@ -44,7 +44,7 @@ func main() {
 
 	// Create Hubble client for global streaming (used only by FlowBroadcaster)
 	var hubbleClient *client.HubbleGRPCClient
-	hubbleClient, err = client.NewHubbleGRPCClientWithMetrics(config.Application.HubbleServer, sharedMetrics)
+	hubbleClient, err = client.NewHubbleGRPCClient(config.Application.HubbleServer, sharedMetrics)
 	if err != nil {
 		logger.Warnf("Failed to create Hubble client for WebSocket streaming: %v", err)
 		logger.Warn("WebSocket flow streaming will not be available")
@@ -89,25 +89,11 @@ func main() {
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// Flows endpoints
-	api.HandleFunc("/flows/stats", h.GetFlowStats).Methods("GET")
 	api.HandleFunc("/stream/flows", h.StreamFlows).Methods("GET")
 	api.HandleFunc("/flows", h.GetFlows).Methods("GET")
 
-	// Alerts endpoints
-	api.HandleFunc("/alerts/timeline", h.GetAlertsTimeline).Methods("GET")
-	api.HandleFunc("/stream/alerts", h.StreamAlerts).Methods("GET")
-	api.HandleFunc("/alerts", h.GetAlerts).Methods("GET")
-	api.HandleFunc("/alerts/{id}", h.GetAlert).Methods("GET")
-
-	// Rules endpoints
-	api.HandleFunc("/rules/stats", h.GetRulesStats).Methods("GET")
-	api.HandleFunc("/rules", h.GetRules).Methods("GET")
-	api.HandleFunc("/rules/{id}", h.GetRule).Methods("GET")
-	api.HandleFunc("/rules/{id}", h.UpdateRule).Methods("PUT")
-
 	// Metrics endpoints
 	api.HandleFunc("/metrics/prometheus/stats", h.GetPrometheusStats).Methods("GET")
-	api.HandleFunc("/metrics/prometheus/test", h.TestPrometheusConnection).Methods("GET")
 	api.HandleFunc("/metrics/prometheus/dropped-flows/timeseries", h.GetDroppedFlowsTimeSeries).Methods("GET")
 	api.HandleFunc("/metrics/prometheus/alert-types", h.GetAlertTypesStats).Methods("GET")
 

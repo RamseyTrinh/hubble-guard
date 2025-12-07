@@ -9,12 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"hubble-anomaly-detector/api/internal/storage"
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
-	"hubble-anomaly-detector/internal/utils"
+	"hubble-guard/api/internal/storage"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
+	"hubble-guard/internal/utils"
 
-	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	prommodel "github.com/prometheus/common/model"
@@ -99,7 +98,7 @@ func (fb *FlowBroadcaster) run() {
 
 		fb.logger.Infof("🔌 Opening Hubble gRPC Stream for namespaces: %v", namespaces)
 
-		err := hc.StreamFlowsWithMetricsOnly(
+		err := hc.StreamFlowsWithMetrics(
 			context.Background(),
 			namespaces,
 			func(ns string) {},
@@ -307,156 +306,6 @@ func convertModelFlowToStorageFlow(mf *model.Flow) storage.Flow {
 	return sf
 }
 
-func (h *Handlers) GetFlowStats(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.GetFlowStats())
-}
-
-func (h *Handlers) GetAlerts(w http.ResponseWriter, r *http.Request) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	if limit < 1 {
-		limit = 50
-	}
-	if limit > 1000 {
-		limit = 1000
-	}
-
-	severity := r.URL.Query().Get("severity")
-	ns := r.URL.Query().Get("namespace")
-	search := r.URL.Query().Get("search")
-
-	alerts := h.store.GetAlerts(limit, severity, ns, search)
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": alerts,
-		"total": len(alerts),
-	})
-}
-
-func (h *Handlers) GetAlert(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
-	a := h.store.GetAlertByID(id)
-	if a == nil {
-		writeError(w, http.StatusNotFound, "Alert not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, a)
-}
-
-func (h *Handlers) GetAlertsTimeline(w http.ResponseWriter, r *http.Request) {
-	startStr := r.URL.Query().Get("start")
-	endStr := r.URL.Query().Get("end")
-
-	var start, end time.Time
-	var err error
-
-	if startStr != "" {
-		start, err = time.Parse(time.RFC3339, startStr)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "Invalid start time")
-			return
-		}
-	}
-
-	if endStr != "" {
-		end, err = time.Parse(time.RFC3339, endStr)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "Invalid end time")
-			return
-		}
-	}
-
-	writeJSON(w, http.StatusOK, h.store.GetAlertsTimeline(start, end))
-}
-
-func (h *Handlers) StreamAlerts(w http.ResponseWriter, r *http.Request) {
-	conn, err := h.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		h.logger.Errorf("WS upgrade error: %v", err)
-		return
-	}
-	defer conn.Close()
-
-	severity := r.URL.Query().Get("severity")
-	ns := r.URL.Query().Get("namespace")
-	typ := r.URL.Query().Get("type")
-
-	sub := &storage.AlertSubscriber{
-		ID:      generateID(),
-		Channel: make(chan storage.Alert, 100),
-		Filter: storage.AlertFilter{
-			Severity:  severity,
-			Namespace: ns,
-			Type:      typ,
-		},
-		LastSeen: time.Now(),
-	}
-
-	h.store.SubscribeAlerts(sub)
-	defer h.store.UnsubscribeAlerts(sub)
-
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	go func() {
-		for range ticker.C {
-			conn.WriteMessage(websocket.PingMessage, []byte{})
-		}
-	}()
-
-	go func() {
-		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
-				return
-			}
-		}
-	}()
-
-	for {
-		select {
-		case a := <-sub.Channel:
-			if err := conn.WriteJSON(a); err != nil {
-				h.logger.Errorf("WS write error: %v", err)
-				return
-			}
-		}
-	}
-}
-
-func (h *Handlers) GetRules(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.GetRules())
-}
-
-func (h *Handlers) GetRule(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
-	rule := h.store.GetRuleByID(id)
-	if rule == nil {
-		writeError(w, http.StatusNotFound, "Rule not found")
-		return
-	}
-	writeJSON(w, http.StatusOK, rule)
-}
-
-func (h *Handlers) UpdateRule(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
-
-	var updates storage.Rule
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	if !h.store.UpdateRule(id, updates) {
-		writeError(w, http.StatusNotFound, "Rule not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, h.store.GetRuleByID(id))
-}
-
-func (h *Handlers) GetRulesStats(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, h.store.GetRulesStats())
-}
-
 func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 	if h.promClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "Prometheus client not available")
@@ -662,59 +511,6 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response)
-}
-
-func (h *Handlers) TestPrometheusConnection(w http.ResponseWriter, r *http.Request) {
-	if h.promClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "Prometheus client not available")
-		return
-	}
-
-	ctx := r.Context()
-	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
-
-	// Test basic query
-	testQueries := []string{
-		"hubble_flows_total",
-		"hubble_guard_alerts_total",
-		"hubble_tcp_connections_total",
-		"up", // Prometheus built-in metric to test connection
-	}
-
-	results := make(map[string]interface{})
-	for _, query := range testQueries {
-		h.logger.Infof("Testing query: %s", query)
-		if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
-			if vector, ok := result.(prommodel.Vector); ok {
-				results[query] = map[string]interface{}{
-					"status": "success",
-					"count":  len(vector),
-					"values": len(vector),
-				}
-				if len(vector) > 0 {
-					results[query].(map[string]interface{})["sample"] = map[string]interface{}{
-						"value":  float64(vector[0].Value),
-						"labels": vector[0].Metric,
-					}
-				}
-			} else {
-				results[query] = map[string]interface{}{
-					"status": "unexpected_type",
-					"type":   fmt.Sprintf("%T", result),
-				}
-			}
-		} else {
-			results[query] = map[string]interface{}{
-				"status": "error",
-				"error":  err.Error(),
-			}
-		}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"prometheus_url": h.config.Prometheus.URL,
-		"queries":        results,
-	})
 }
 
 func (h *Handlers) GetDroppedFlowsTimeSeries(w http.ResponseWriter, r *http.Request) {

@@ -38,9 +38,9 @@ spec:
               protocol: TCP
           env:
             - name: VITE_API_URL
-              value: "http://{{ include "hubble-guard.anomalyDetector.serviceName" . }}:{{ .Values.anomalyDetector.service.port }}/api/v1"
+              value: "http://{{ include "hubble-guard.apiServer.serviceName" . }}:{{ .Values.apiServer.service.port }}/api/v1"
             - name: VITE_WS_URL
-              value: "ws://{{ include "hubble-guard.anomalyDetector.serviceName" . }}:{{ .Values.anomalyDetector.service.port }}/api/v1"
+              value: "ws://{{ include "hubble-guard.apiServer.serviceName" . }}:{{ .Values.apiServer.service.port }}/api/v1"
           resources:
             {{- toYaml .Values.ui.resources | nindent 12 }}
           livenessProbe:

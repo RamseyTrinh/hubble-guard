@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"hubble-anomaly-detector/internal/client"
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/client"
+	"hubble-guard/internal/model"
 
 	"github.com/sirupsen/logrus"
 )
@@ -89,6 +89,10 @@ var globalMetrics *client.PrometheusMetrics
 
 func SetGlobalMetrics(metrics *client.PrometheusMetrics) {
 	globalMetrics = metrics
+}
+
+func GetGlobalMetrics() *client.PrometheusMetrics {
+	return globalMetrics
 }
 
 func RecordAlertMetrics(alert model.Alert) {

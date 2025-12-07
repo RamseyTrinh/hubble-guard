@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	prommodel "github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
@@ -113,7 +113,6 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 	if vector, ok := result.(prommodel.Vector); ok && len(vector) > 0 {
 		currentRate = float64(vector[0].Value)
 	} else {
-		// No data means rate is 0
 		currentRate = 0.0
 	}
 
@@ -127,7 +126,6 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 			r.baselineStart[namespace] = time.Now()
 			r.baselineWindow[namespace] = 1 * time.Minute
 			r.baselineRates[namespace] = []float64{currentRate}
-			r.logger.Infof("[Traffic Death] Namespace: %s | Starting baseline collection in 1 minute", namespace)
 			return
 		}
 
@@ -145,7 +143,6 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 			}
 			avgBaseline := sum / float64(len(r.baselineRates[namespace]))
 			r.baseline[namespace] = avgBaseline
-			r.logger.Infof("[Traffic Death] Namespace: %s | Baseline calculated: %.2f flows/sec", namespace, avgBaseline)
 			delete(r.baselineStart, namespace)
 			delete(r.baselineWindow, namespace)
 			delete(r.baselineRates, namespace)
@@ -155,7 +152,6 @@ func (r *TrafficDeathRule) checkNamespace(ctx context.Context, namespace string)
 
 	if baseline <= 0 && currentRate > 0 {
 		r.baseline[namespace] = currentRate
-		r.logger.Infof("[Traffic Death] Namespace: %s | Updating baseline: %.2f flows/sec", namespace, currentRate)
 		return
 	}
 

@@ -6,7 +6,6 @@ application:
   hubble_server: "hubble-relay.kube-system.svc.cluster.local:80"
   prometheus_export_url: "8080"
   default_namespace: "default"
-  auto_start: false
 
 # Prometheus configuration (for anomaly detector to connect to)
 # Note: URL will be dynamically set based on service name
@@ -31,85 +30,59 @@ rules:
   - name: "ddos"
     enabled: true
     severity: "CRITICAL"
-    description: "Phát hiện DDoS attack real-time (theo dõi trực tiếp từ flows)"
+    description: "Phát hiện DDoS attack real-time"
     thresholds:
-      multiplier: 3.0
-  
-  - name: "traffic_spike"
-    enabled: true
-    severity: "CRITICAL"
-    description: "Phát hiện traffic spike: lưu lượng tăng nhanh trong thời gian ngắn"
-    thresholds:
-      multiplier: 3.0
-  
-  - name: "new_destination"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện kết nối đến destination mới"
-  
-  - name: "tcp_reset_surge"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện surge TCP resets"
-    thresholds:
-      per_minute: 10
-  
-  - name: "tcp_drop_surge"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện surge TCP drops"
-    thresholds:
-      per_minute: 10
-  
-  - name: "high_bandwidth"
-    enabled: true
-    severity: "MEDIUM"
-    description: "Phát hiện bandwidth cao bất thường"
-    thresholds:
-      bytes_per_second: 1000000
-  
-  - name: "unusual_port_scan"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện port scanning"
-    thresholds:
-      ports_per_minute: 50
-  
-  - name: "block_connection"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện blocked connections (DROP flows)"
-    thresholds:
-      per_minute: 10
-  
-  - name: "port_scan"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện port scanning attacks"
-    thresholds:
-      distinct_ports: 10
-  
-  - name: "namespace_access"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm (kube-system, monitoring, security) và truy cập kube-dns"
-    thresholds:
-      forbidden_namespaces:
-        - "kube-system"
-        - "monitoring"
-        - "security"
-  
-  - name: "suspicious_outbound"
-    enabled: true
-    severity: "HIGH"
-    description: "Phát hiện các kết nối outbound đáng ngờ đến các port như Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
-    thresholds:
-      per_minute: 10
+      multiplier: 10.0
   
   - name: "traffic_death"
     enabled: true
     severity: "CRITICAL"
     description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
+  
+  - name: "port_scan"
+    enabled: false
+    severity: "HIGH"
+    description: "Phát hiện port scanning attacks"
+    thresholds:
+      distinct_ports: 20
+  
+  - name: "namespace_access"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện truy cập trái phép đến namespace nhạy cảm"
+    thresholds:
+      forbidden_namespaces:
+        - "monitoring"
+        - "security"
+        - "test-demo"
+
+  - name: "suspicious_outbound"
+    enabled: true
+    severity: "HIGH"
+    description: "Cảnh báo ngay khi phát hiện kết nối outbound đến các port nguy hiểm: Telnet (23), RPC (135), SMB (445), SQL Server (1433), MySQL (3306), PostgreSQL (5432)"
+  
+  - name: "traffic_spike"
+    enabled: true
+    severity: "CRITICAL"
+    description: "Phát hiện traffic spike có thể là DDoS (từ Prometheus)"
+    thresholds:
+      multiplier: 3.0
+
+  - name: "block_connection"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện DROP flows"
+    thresholds:
+      per_minute: 10
+
+  - name: "unusual_traffic"
+    enabled: true
+    severity: "HIGH"
+    description: "Phát hiện traffic bất thường"
+    thresholds:
+      allowed_sources:
+        demo-api:
+          - "demo-frontend"
 
 # Alerting configuration
 alerting:
@@ -123,23 +96,11 @@ alerting:
     telegram: true
   
   telegram:
-    bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"  # Set your Telegram bot token
-    chat_id: "5037781514"    # Set your Telegram chat ID
-    parse_mode: "Markdown"
-    enabled: true  # Set to true after configuring bot_token and chat_id
-    message_template: |
-      🚨 *{{ .Severity }} Alert*
-      
-      *Type:* {{ .Type }}
-      *Time:* {{ formatTime .Timestamp "2006-01-02 15:04:05" }}
-      *Message:* {{ .Message }}
-      
-      {{ if and .FlowData .FlowData.Source }}
-      *Source:* {{ .FlowData.Source.Namespace }}/{{ .FlowData.Source.PodName }}
-      {{ end }}
-      {{ if and .FlowData .FlowData.Destination }}
-      *Destination:* {{ .FlowData.Destination.Namespace }}/{{ .FlowData.Destination.PodName }}
-      {{ end }}
+    bot_token: "8218813054:AAHsOPfSXpnBgQaUS52naFavJUWafKxYqmQ"
+    chat_id: "5037781514"
+    parse_mode: ""
+    enabled: true
+    message_template: ""
 
 # Logging configuration
 logging:
@@ -152,9 +113,9 @@ anomalyDetector:
   replicaCount: 1
   
   image:
-    repository: docker.io/ramseytrinh338/hubble-anomaly-detector
+    repository: docker.io/ramseytrinh338/hubble-guard
     pullPolicy: IfNotPresent
-    tag: "1.0.0"
+    tag: "latest"
   
   imagePullSecrets: []
   
@@ -188,6 +149,55 @@ anomalyDetector:
   service:
     type: ClusterIP
     port: 8080
+    annotations: {}
+  
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+# API Server configuration
+apiServer:
+  enabled: true
+  replicaCount: 1
+  
+  image:
+    repository: docker.io/ramseytrinh338/hubble-guard-api
+    pullPolicy: IfNotPresent
+    tag: "latest"
+  
+  imagePullSecrets: []
+  
+  podAnnotations: {}
+  
+  podSecurityContext: {}
+  
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false
+    capabilities:
+      drop:
+      - ALL
+  
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  
+  nodeSelector: {}
+  
+  tolerations: []
+  
+  affinity: {}
+  
+  service:
+    type: ClusterIP
+    port: 5001
     annotations: {}
   
   serviceAccount:
@@ -292,9 +302,9 @@ ui:
   replicaCount: 1
   
   image:
-    repository: docker.io/ramseytrinh338/hubble-ui
-    tag: "1.0.0"
-    pullPolicy: IfNotPresent
+    repository: docker.io/ramseytrinh338/hubble-guard-ui
+    tag: "latest"
+    pullPolicy: Always
   
   imagePullSecrets: []
   
@@ -328,7 +338,7 @@ ui:
     className: "nginx"
     annotations: {}
     hosts:
-      - host: hubble-ui.local
+      - host: hubble-guard-ui.local
         paths:
           - path: /
             pathType: Prefix

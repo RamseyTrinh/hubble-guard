@@ -16,7 +16,7 @@ data:
         static_configs:
           - targets: ['localhost:9090']
       
-      - job_name: 'hubble-anomaly-detector'
+      - job_name: 'hubble-guard'
         static_configs:
           - targets: ['{{ include "hubble-guard.fullname" . }}-anomaly-detector:{{ .Values.anomalyDetector.service.port }}']
         scrape_interval: {{ .Values.prometheus.scrapeInterval }}

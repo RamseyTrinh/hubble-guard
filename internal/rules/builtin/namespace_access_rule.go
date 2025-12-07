@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"hubble-anomaly-detector/internal/model"
+	"hubble-guard/internal/model"
 
 	prommodel "github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
@@ -23,6 +23,11 @@ type NamespaceAccessRule struct {
 	interval      time.Duration
 	stopChan      chan struct{}
 	alertEmitter  func(*model.Alert)
+
+	// Alert cooldown to prevent duplicate alerts
+	alertedPairs  map[string]time.Time
+	alertedMu     sync.RWMutex
+	alertCooldown time.Duration
 }
 
 func NewNamespaceAccessRule(enabled bool, severity string, promClient PrometheusQueryClient, logger *logrus.Logger) *NamespaceAccessRule {
@@ -35,6 +40,8 @@ func NewNamespaceAccessRule(enabled bool, severity string, promClient Prometheus
 		logger:        logger,
 		interval:      10 * time.Second,
 		stopChan:      make(chan struct{}),
+		alertedPairs:  make(map[string]time.Time),
+		alertCooldown: 60 * time.Second, // 1 minute cooldown
 	}
 }
 
@@ -105,7 +112,7 @@ func (r *NamespaceAccessRule) checkFromPrometheus(ctx context.Context) {
 	}
 
 	for forbiddenNSName := range forbiddenNS {
-		query := fmt.Sprintf(`sum(increase(hubble_namespace_access_total{dest_namespace="%s"}[1m])) by (source_namespace, dest_namespace, dest_service, dest_pod)`, forbiddenNSName)
+		query := fmt.Sprintf(`sum(increase(namespace_access_total{dest_namespace="%s"}[1m])) by (source_namespace, dest_namespace, dest_service, dest_pod)`, forbiddenNSName)
 
 		result, err := r.prometheusAPI.Query(ctx, query, 10*time.Second)
 		if err != nil {
@@ -140,11 +147,18 @@ func (r *NamespaceAccessRule) checkFromPrometheus(ctx context.Context) {
 
 			accessCount := float64(sample.Value)
 
-			if sourceNS == destNS || sourceNS == "" || destNS == "" {
+			// Skip if no actual access or same namespace
+			if accessCount <= 0 || sourceNS == destNS || sourceNS == "" || destNS == "" {
 				continue
 			}
 
 			if forbiddenNS[destNS] {
+				// Check cooldown - avoid duplicate alerts
+				alertKey := fmt.Sprintf("%s->%s", sourceNS, destNS)
+				if r.isAlertedRecently(alertKey) {
+					continue
+				}
+
 				isDNSRequest := false
 				if destService == "kube-dns" || destService == "coredns" || destPod == "kube-dns" || destPod == "coredns" {
 					isDNSRequest = true
@@ -152,10 +166,13 @@ func (r *NamespaceAccessRule) checkFromPrometheus(ctx context.Context) {
 
 				var message string
 				if isDNSRequest && sourceNS != "kube-system" {
-					message = fmt.Sprintf("Unauthorized DNS access detected: pod in namespace '%s' accessing kube-dns in kube-system namespace (count: %.0f in 1 minute)", sourceNS, accessCount)
+					message = fmt.Sprintf("Unauthorized DNS access detected: pod in namespace '%s' accessing kube-dns in kube-system namespace", sourceNS)
 				} else {
-					message = fmt.Sprintf("Unauthorized access to sensitive namespace detected: pod in namespace '%s' accessing namespace '%s' (pod: %s, service: %s, count: %.0f in 1 minute)", sourceNS, destNS, destPod, destService, accessCount)
+					message = fmt.Sprintf("Unauthorized access to sensitive namespace detected: pod in namespace '%s' accessing namespace '%s'", sourceNS, destNS)
 				}
+
+				// Mark as alerted
+				r.markAlerted(alertKey)
 
 				alert := &model.Alert{
 					Type:      r.name,
@@ -171,4 +188,21 @@ func (r *NamespaceAccessRule) checkFromPrometheus(ctx context.Context) {
 			}
 		}
 	}
+}
+
+func (r *NamespaceAccessRule) isAlertedRecently(key string) bool {
+	r.alertedMu.RLock()
+	defer r.alertedMu.RUnlock()
+
+	lastAlerted, exists := r.alertedPairs[key]
+	if !exists {
+		return false
+	}
+	return time.Since(lastAlerted) < r.alertCooldown
+}
+
+func (r *NamespaceAccessRule) markAlerted(key string) {
+	r.alertedMu.Lock()
+	defer r.alertedMu.Unlock()
+	r.alertedPairs[key] = time.Now()
 }
