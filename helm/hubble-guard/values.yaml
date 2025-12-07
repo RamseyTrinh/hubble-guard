@@ -253,28 +253,23 @@ prometheus:
 # Grafana configuration
 grafana:
   replicaCount: 1
-  
   image:
     repository: grafana/grafana
     tag: "11.0.0"
     pullPolicy: IfNotPresent
-  
-  imagePullSecrets: []
-  
-  podAnnotations: {}
-  
-  podSecurityContext: {}
-  
-  securityContext: {}
-  
+
   adminUser: "admin"
   adminPassword: "admin"
-  # Root URL for Grafana - use relative path for reverse proxy
-  # nginx strips /grafana/ prefix, so serveFromSubPath should be false
-  rootUrl: "/grafana/"
-  serveFromSubPath: false
-  plugins: ""
-  
+
+  grafana.ini:
+    server:
+      root_url: "%(protocol)s://%(domain)s/grafana/"
+      serve_from_sub_path: true
+    security:
+      allow_embedding: true
+      cookie_secure: false
+      cookie_samesite: none
+
   resources:
     limits:
       cpu: 500m
@@ -282,22 +277,13 @@ grafana:
     requests:
       cpu: 100m
       memory: 128Mi
-  
+
   persistence:
     enabled: false
-    size: 10Gi
-    storageClass: ""
-  
-  nodeSelector: {}
-  
-  tolerations: []
-  
-  affinity: {}
-  
+
   service:
     type: ClusterIP
     port: 3000
-    annotations: {}
 
 # UI configuration
 ui:
