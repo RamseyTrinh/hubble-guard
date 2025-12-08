@@ -305,7 +305,7 @@ data:
           const toggleBtn = this;
           
           if (cmdEl.style.display === 'none') {
-            cmdEl.innerHTML = '<br>POD_IP=$(kubectl get pod -l app=demo-api -o jsonpath=\'{.items[0].status.podIP}\') && echo "Scanning Pod IP: $POD_IP" && kubectl exec -it attacker -- nmap -sT -p 1-100 $POD_IP'<br><br><i>Click here to copy</i>';
+            cmdEl.innerHTML = '<br># 1. Lấy Pod IP của demo-api<br><br># 2. Scan Pod IP (không qua Service)<br><br><i>Click here to copy</i>';
             cmdEl.style.display = 'block';
             cmdEl.onclick = () => {
               navigator.clipboard.writeText('POD_IP=$(kubectl get pod -l app=demo-api -o jsonpath=\'{.items[0].status.podIP}\') && echo "Scanning Pod IP: $POD_IP" && kubectl exec -it attacker -- nmap -sT -p 1-100 $POD_IP');
