@@ -1,0 +1,21 @@
+# NodePort Service để expose hubble-relay ra ngoài cluster
+# Giúp không cần chạy `cilium hubble port-forward` mỗi lần
+apiVersion: v1
+kind: Service
+metadata:
+  name: hubble-relay-external
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: hubble-relay
+    app.kubernetes.io/part-of: cilium
+spec:
+  type: NodePort
+  selector:
+    k8s-app: hubble-relay
+  ports:
+    - name: grpc
+      port: 4245
+      targetPort: 4245
+      nodePort: 31245  # Truy cập qua <node-ip>:31245
+      protocol: TCP
+
