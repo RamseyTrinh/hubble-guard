@@ -1,57 +1,63 @@
 # Hubble Guard
 
-Hệ thống phát hiện bất thường mạng trong Kubernetes sử dụng Cilium Hubble.
+Mornitoring and anomaly detection system for Kubernetes using eBPF technology.
 
 ---
 
-## 1. Kiến trúc tổng thể
+## 1. Architecture
 
 ![Hubble Guard Architecture](./images/architecture.png)
 
-### Thành phần chính Hubble Guard
+### Core Components
 
-| Thành phần | Mô tả |
-|-----------|-------|
-| **Anomaly Detector** | Phân tích flows và phát hiện bất thường theo rules |
-| **API Server** | REST API cung cấp dữ liệu cho UI |
-| **UI** | Giao diện web quản lý và giám sát |
-
----
-
-## 2. Tính năng
-
-### 2.1. Phát hiện bất thường (Anomaly Detection)
-
-- **Real-time Detection**: Phân tích network flows trực tiếp từ Hubble gRPC stream
-- **Rule-based Engine**: Hệ thống rules linh hoạt, có thể bật/tắt và cấu hình threshold
-- **Baseline Learning**: Tự động học baseline traffic để phát hiện anomaly
-- **Multi-channel Alerting**: Gửi cảnh báo qua Telegram, Webhook, Log
-
-### 2.2. Giao diện người dùng (UI)
-
-- **Dashboard**: Tổng quan về trạng thái hệ thống và alerts
-- **Alert Management**: Xem, xác nhận và quản lý các cảnh báo
-- **Grafana Integration**: Embed dashboard Grafana để visualize metrics
-- **Real-time Updates**: Cập nhật dữ liệu real-time qua API polling
+| Component | Description |
+|-----------|-------------|
+| **Anomaly Detector** | Analyzes network flows and detects anomalies based on configurable rules |
+| **API Server** | REST API providing data for the UI |
+| **UI** | Web interface for monitoring and management |
 
 ---
 
-## 3. Các luật phát hiện (Detection Rules)
+## 2. Features
 
-| Rule | Severity | Mô tả |
-|------|----------|-------|
-| **ddos** | CRITICAL | Phát hiện DDoS attack real-time khi traffic vượt ngưỡng 10x baseline |
-| **traffic_death** | CRITICAL | Phát hiện service chết khi traffic rate = 0 nhưng trước đó có baseline |
-| **traffic_spike** | CRITICAL | Phát hiện traffic spike bất thường (3x baseline) từ Prometheus metrics |
-| **namespace_access** | HIGH | Phát hiện truy cập trái phép đến namespace nhạy cảm (monitoring, security...) |
-| **suspicious_outbound** | HIGH | Cảnh báo kết nối đến các port nguy hiểm: Telnet (23), SMB (445), MySQL (3306)... |
-| **block_connection** | HIGH | Phát hiện DROP flows (connections bị chặn bởi Network Policy) |
-| **unusual_traffic** | HIGH | Phát hiện traffic từ sources không được phép |
-| **port_scan** | HIGH | Phát hiện port scanning (>20 unique ports trong 30s) |
+### 2.1. Anomaly Detection
 
-### Cấu hình Rules
+- **Real-time Detection**: Analyzes network flows and detects anomalies in real-time
+- **Multi-channel Alerting**: Sends alerts via Telegram, Webhook, Log
 
-Rules được cấu hình trong `values.yaml`:
+### 2.2. Network Monitoring (UI)
+
+- **Dashboard**: Overview of system status and alerts
+- **Alert Management**: View, acknowledge, and manage alerts
+- **Grafana Integration**: Embedded Grafana dashboard for metrics visualization
+- **Real-time Updates**: Real-time data updates via API polling
+
+#### Dashboard
+
+![Dashboard](./images/dashboard.png)
+
+#### Flow Viewer
+
+![Flow Viewer](./images/flow-viewer.png)
+
+---
+
+## 3. Detection Rules
+
+| Rule | Severity | Description |
+|------|----------|-------------|
+| **ddos** | CRITICAL | Detects DDoS attacks in real-time when traffic exceeds 10x baseline |
+| **traffic_death** | CRITICAL | Detects service death when traffic rate = 0 but previously had baseline |
+| **traffic_spike** | CRITICAL | Detects abnormal traffic spikes (3x baseline) from Prometheus metrics |
+| **namespace_access** | HIGH | Detects unauthorized access to sensitive namespaces (monitoring, security...) |
+| **suspicious_outbound** | HIGH | Alerts on connections to dangerous ports: Telnet (23), SMB (445), MySQL (3306)... |
+| **block_connection** | HIGH | Detects DROP flows (connections blocked by Network Policy) |
+| **unusual_traffic** | HIGH | Detects traffic from unauthorized sources |
+| **port_scan** | HIGH | Detects port scanning (>20 unique ports in 30s) |
+
+### Rules Configuration
+
+Rules are configured in `values.yaml`:
 
 ```yaml
 rules:
@@ -72,53 +78,53 @@ rules:
 
 ---
 
-## 4. Cài đặt
+## 4. Installation
 
-### 4.a. Môi trường Development
+### 4.a. Development Environment
 
-#### Yêu cầu
+#### Prerequisites
 
 - Go 1.21+
 - Docker & Docker Compose
 - Kubernetes cluster (Minikube/Kind/Docker Desktop)
-- Cilium + Hubble đã cài đặt
+- Cilium + Hubble installed
 - Helm 3.0+
 
-#### Bước 1: Clone repository
+#### Step 1: Clone repository
 
 ```bash
 git clone https://github.com/your-repo/hubble-guard.git
 cd hubble-guard
 ```
 
-#### Bước 2: Đảm bảo cài đặt Cilium với Hubble
+#### Step 2: Ensure Cilium with Hubble is installed
 
 ```bash
-# Cài đặt Cilium CLI
+# Install Cilium CLI
 curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
 sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
 
-# Cài đặt Cilium với Hubble enabled
+# Install Cilium with Hubble enabled
 cilium install --set hubble.relay.enabled=true --set hubble.ui.enabled=true
 
-# Kiểm tra trạng thái
+# Check status
 cilium status
 ```
 
-#### Bước 3: Build và chạy local
+#### Step 3: Build and run locally
 
 ```bash
 # Install dependencies
 make deps
 
-# Chạy Anomaly Detector
+# Run Anomaly Detector
 make run
 
-# Chạy API Server (terminal khác)
+# Run API Server (in another terminal)
 make api-run
 ```
 
-#### Bước 4: Chạy UI (development mode)
+#### Step 4: Run UI (development mode)
 
 ```bash
 cd ui
@@ -126,30 +132,30 @@ npm install
 npm run dev
 ```
 
-### 4.b. Môi trường Production
+### 4.b. Production Environment
 
-#### Yêu cầu
+#### Prerequisites
 
 - Kubernetes cluster 1.19+ (GKE, EKS, AKS, on-premise)
-- Cilium CNI đã cài đặt với Hubble enabled
+- Cilium CNI installed with Hubble enabled
 - Helm 3.0+
 - Ingress Controller (nginx-ingress recommended)
-- (Optional) Cert-Manager cho HTTPS
+- (Optional) Cert-Manager for HTTPS
 
-#### Bước 1: Đảm bảo cài đặt Cilium với Hubble
+#### Step 1: Ensure Cilium with Hubble is installed
 
 ```bash
 cilium status
 ```
 
-#### Bước 2: Chỉnh sửa file values production
+#### Step 2: Edit production values file
 
 ```yaml
 # Production values
 application:
   hubble_server: "hubble-relay.kube-system.svc.cluster.local:80"
 
-# Cấu hình alerting
+# Alerting configuration
 alerting:
   enabled: true
   channels:
@@ -174,7 +180,7 @@ rules:
         - "kube-system"
         - "monitoring"
 
-# Resources cho production
+# Production resources
 anomalyDetector:
   replicaCount: 2
   resources:
@@ -195,7 +201,7 @@ prometheus:
 grafana:
   adminPassword: "SECURE_PASSWORD_HERE"
 
-# UI với Ingress
+# UI with Ingress
 ui:
   ingress:
     enabled: true
@@ -213,35 +219,38 @@ ui:
           - hubble-guard.your-domain.com
 ```
 
-#### Bước 3: Deploy với Helm
+#### Step 3: Deploy with Helm
 
 ```bash
-
 # Deploy
 helm upgrade --install hubble-guard ./helm/hubble-guard \
   -n hubble-guard \
   --create-namespace \
   -f production-values.yaml
 
-# Kiểm tra deployment
+# Check deployment
 kubectl get pods -n hubble-guard
 kubectl get svc -n hubble-guard
 kubectl get ingress -n hubble-guard
 ```
 
-#### Bước 4: Verify deployment
+#### Step 4: Verify deployment
 
 ```bash
-# Kiểm tra tất cả pods đang chạy
+# Check all pods are running
 kubectl get pods -n hubble-guard -w
 
-# Kiểm tra logs
+# Check logs
 kubectl logs -f deployment/hubble-guard-anomaly-detector -n hubble-guard
 kubectl logs -f deployment/hubble-guard-api-server -n hubble-guard
 
-# Kiểm tra Prometheus targets
+# Check Prometheus targets
 kubectl port-forward svc/hubble-guard-prometheus 9090:9090 -n hubble-guard
-# Truy cập: http://localhost:9090/targets
+# Access: http://localhost:9090/targets
 ```
 
+---
 
+## License
+
+MIT License
