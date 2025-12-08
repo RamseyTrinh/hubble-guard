@@ -1,367 +1,247 @@
-# Hubble Anomaly Detector
+# Hubble Guard
 
-Network flow anomaly detection system using Hubble and Prometheus.
+Hệ thống phát hiện bất thường mạng trong Kubernetes sử dụng Cilium Hubble.
 
-Một công cụ phát hiện bất thường mạng dựa trên dữ liệu flow từ Hubble, sử dụng rule-based detection để cảnh báo về các hoạt động đáng ngờ.
+---
 
-## Tính năng
+## 1. Kiến trúc tổng thể
 
-- **Lắng nghe Flow Data**: Kết nối trực tiếp với Hubble server qua gRPC để nhận dữ liệu flow real-time
-- **Redis-based Caching**: Sử dụng Redis để lưu trữ và xử lý flow data hiệu quả
-- **Rule Engine**: Hệ thống rule engine với các quy tắc phát hiện bất thường:
-  - Traffic spike detection (phát hiện tăng đột biến lưu lượng)
-  - Traffic drop detection (phát hiện service chết/ngừng hoạt động)
-  - DDoS pattern detection (phát hiện mẫu DDoS)
-  - High error rate detection (phát hiện tỷ lệ lỗi cao)
-  - Error burst detection (phát hiện bùng nổ lỗi)
-- **Real-time Alerting**: Cảnh báo ngay lập tức khi phát hiện bất thường
-- **Interactive Menu**: Giao diện menu tương tác để xem flows và chạy anomaly detection
-- **Detailed Statistics**: Thống kê chi tiết về Redis cache và rule engine
+![Hubble Guard Architecture](./images/architecture.png)
 
-## Cài đặt
+### Thành phần chính Hubble Guard
 
-### Yêu cầu
+| Thành phần | Mô tả |
+|-----------|-------|
+| **Anomaly Detector** | Phân tích flows và phát hiện bất thường theo rules |
+| **API Server** | REST API cung cấp dữ liệu cho UI |
+| **UI** | Giao diện web quản lý và giám sát |
 
-- Go 1.21 hoặc cao hơn
-- Redis server đang chạy (mặc định: localhost:6379)
-- Hubble server đang chạy và có thể truy cập
-- Cilium đã được cài đặt và cấu hình
+---
 
-### Build
-
-```bash
-go mod tidy
-go build -o hubble-guard
-```
-
-## Sử dụng
-
-### Chạy cơ bản
-
-```bash
-./hubble-guard
-```
-
-### Với các tùy chọn
-
-```bash
-./hubble-guard \
-  --hubble-server=localhost:4245 \
-  --version
-```
-
-### Các tham số
-
-- `--hubble-server`: Địa chỉ Hubble server (mặc định: localhost:4245)
-- `--version`: Hiển thị thông tin phiên bản
-
-### Menu tương tác
-
-Sau khi khởi động, chương trình sẽ hiển thị menu với các tùy chọn:
-
-1. **View Flows** - Hiển thị flows real-time từ Hubble
-2. **Stream Flows with Prometheus Metrics** - Thu thập flows và metrics cho Prometheus
-3. **Prometheus Anomaly Detection** - Phát hiện anomaly dựa trên Prometheus metrics
-4. **Exit** - Thoát chương trình
-
-## Cấu hình
-
-### Cấu hình Redis
-
-Redis được cấu hình mặc định với:
-- **Address**: 127.0.0.1:6379
-- **Password**: hoangcn8uetvnu
-- **Database**: 0
-- **TTL**: 5 phút cho flow data
-
-### Cấu hình Rule Engine
-
-Hệ thống rule engine có 4 rules mới:
-
-1. **DDoS Spike Rule**
-   - Window: 5 giây
-   - Threshold: 50 flows
-   - Severity: CRITICAL
-   - Mục tiêu: Phát hiện DDoS attacks với >50 flows trong 5 giây
-
-2. **Traffic Drop (Service Down)**
-   - Window: 30 giây
-   - Threshold: 0 flows
-   - Severity: CRITICAL
-   - Mục tiêu: Phát hiện service ngừng nhận request
-
-3. **Port Scan Detection**
-   - Window: 30 giây
-   - Threshold: 20 unique ports
-   - Severity: HIGH
-   - Mục tiêu: Phát hiện 1 pod thử kết nối nhiều cổng khác nhau
-
-4. **Cross-Namespace Traffic**
-   - Window: 60 giây
-   - Threshold: 1 flow
-   - Severity: MEDIUM
-   - Mục tiêu: Phát hiện pod gửi traffic bất thường sang namespace khác
-
-## Cách thức hoạt động của Anomaly Detection
-
-### 1. **Thu thập dữ liệu Flow (Data Collection)**
-```
-Hubble gRPC Stream → FlowCache → Redis Storage
-```
-
-**Dữ liệu được lưu trữ:**
-- **Key format**: `flow:srcPod:dstPod` (ví dụ: `flow:demo-frontend-xxx:demo-api-yyy`)
-- **Value format**: `port|flags|verdict` (ví dụ: `8080|443|SYN,ACK|FORWARDED`)
-- **Timestamp**: Unix timestamp để sắp xếp theo thời gian
-- **TTL**: 10 phút cho mỗi flow key
-- **Simple Counting**: Đếm tất cả flows trong time window (không cần bucket logic)
-
-### 2. **Phân tích theo Time Windows**
-```go
-// Mỗi 5 giây, hệ thống phân tích các window
-func evaluateAllRules() {
-    windows := flowCache.GetFlowWindows(60) // 60 giây window
-    totalRequests := 0
-    for _, window := range windows {
-        totalRequests += window.Count
-    }
-    // Hiển thị: " Status: X total requests in last 60s - Normal"
-}
-```
-
-### 3. **Rule Processing Flow**
-```
-Flow Data → Time Window → Rule Evaluation → Alert Generation
-```
-
-**Ví dụ flow data:**
-```
-flow:demo-frontend:demo-api
-├── 1705123456: 8080|443|SYN,ACK|FORWARDED
-├── 1705123457: 8080|443|ACK|FORWARDED
-└── 1705123458: 8080|443|FIN,ACK|FORWARDED
-```
-
-### 4. **Rule Processing Flow**
-```
-Time Windows → Rule Engine → 4 Detection Rules
-     ↓
-Metrics Calculation → Threshold Check → Alert Generation
-     ↓
-Status Display: " Status: X requests - Normal"
-Alert Display: " [time] CRITICAL DDoS Attack Detected"
-```
-
-## Các loại Alert
-
-### DDOS_SPIKE
-- **Mô tả**: Phát hiện tấn công DDoS với >50 flows trong 5 giây
-- **Severity**: CRITICAL
-- **Trigger**: Khi có > 50 flows trong 5 giây
-- **Message**: `"DDoS Attack Detected: X flows in 5s (threshold: 50) - srcPod:dstPod"`
-
-### TRAFFIC_DROP (Service Down)
-- **Mô tả**: Phát hiện service ngừng hoạt động
-- **Severity**: CRITICAL
-- **Trigger**: Khi không có traffic trong 30 giây
-- **Message**: `"Service Down Detected: No traffic for 30s - srcPod:dstPod"`
-
-### PORT_SCAN
-- **Mô tả**: Phát hiện port scanning với >20 unique ports
-- **Severity**: HIGH
-- **Trigger**: Khi có > 20 unique ports trong 30 giây
-- **Message**: `"Port Scan Detected: X unique ports in 30s (threshold: 20) - srcPod:dstPod"`
-
-### CROSS_NAMESPACE
-- **Mô tả**: Phát hiện traffic bất thường sang namespace khác
-- **Severity**: MEDIUM
-- **Trigger**: Khi có traffic sang namespace không được phép
-- **Message**: `"Cross-Namespace Traffic Detected: srcPod (srcNS) -> dstPod (dstNS) - flowKey"`
-
-## Cấu trúc Project
-
-```
-.
-├── main.go                 # Entry point với interactive menu
-├── config.go              # Configuration structures
-├── hubble_grpc_client.go  # Hubble gRPC client implementation
-├── anomaly_detector.go    # Anomaly detection logic với Redis
-├── rule_engine.go         # Rule engine cho anomaly detection
-├── flow_cache.go          # Redis-based flow caching
-├── flow_types.go          # Flow data structures
-├── go.mod                 # Go module file
-├── go.sum                 # Go dependencies
-├── Makefile               # Build và run scripts
-├── docker-compose.yaml    # Docker setup
-└── README.md             # Documentation
-```
-
-## Dependencies
-
-- `github.com/cilium/cilium`: Hubble API và flow structures
-- `github.com/sirupsen/logrus`: Logging
-- `github.com/go-redis/redis/v8`: Redis client
-- `google.golang.org/grpc`: gRPC client
-- `google.golang.org/protobuf`: Protocol buffers
-
-## Ví dụ Output
-
-### Status Display (Normal)
-```
- Status: 150 total requests in last 60s - Normal
- Status: 200 total requests in last 60s - Normal
-```
-
-
-
-### Status Display (Every 60 seconds)
-```
- Status: 150 total requests in last 60s - Normal
- Status: 200 total requests in last 60s - Normal
-```
-
-## Troubleshooting
-
-### Lỗi kết nối Redis
-
-```
-Failed to connect to Redis: connection refused
-```
-
-**Giải pháp**: Đảm bảo Redis server đang chạy trên localhost:6379 với password `hoangcn8uetvnu`.
-
-### Lỗi kết nối Hubble
-
-```
-Failed to connect to Hubble server: connection refused
-```
-
-**Giải pháp**: Đảm bảo Hubble server đang chạy và có thể truy cập từ địa chỉ được cấu hình.
-
-### Lỗi gRPC
-
-```
-Failed to start flow streaming: rpc error: code = Unavailable
-```
-
-**Giải pháp**: Kiểm tra kết nối mạng và cấu hình Hubble server.
-
-### Lỗi build
-
-```
-go: cannot find main module
-```
-
-**Giải pháp**: Chạy `go mod tidy` để tải dependencies và `go mod download` để tải về.
-
-## Chạy với Docker
-
-### Sử dụng Docker Compose
-
-```bash
-# Khởi động Redis và chạy ứng dụng
-docker-compose up -d
-
-# Xem logs
-docker-compose logs -f
-
-# Dừng services
-docker-compose down
-```
-
-### Build Docker image
-
-```bash
-# Build image
-docker build -t hubble-guard .
-
-# Chạy container
-docker run -it --rm hubble-guard
-```
-
-## Kubernetes Deployment với Helm
-
-### Prerequisites
-
-- Kubernetes cluster (1.19+)
-- Helm 3.0+
-- kubectl configured
-- Hubble Relay installed
-
-### Quick Start
-
-**Triển khai nhanh:**
-
-```bash
-# 1. Tạo file cấu hình my-values.yaml (xem mẫu bên dưới)
-
-# 2. Triển khai với Helm
-helm install hubble-guard ./helm/hubble-guard \
-  -n hubble-guard \
-  --create-namespace \
-  -f my-values.yaml
-
-# 3. Kiểm tra deployment
-kubectl get pods -n hubble-guard
-```
-
-**File my-values.yaml mẫu:**
+## 2. Tính năng
+
+### 2.1. Phát hiện bất thường (Anomaly Detection)
+
+- **Real-time Detection**: Phân tích network flows trực tiếp từ Hubble gRPC stream
+- **Rule-based Engine**: Hệ thống rules linh hoạt, có thể bật/tắt và cấu hình threshold
+- **Baseline Learning**: Tự động học baseline traffic để phát hiện anomaly
+- **Multi-channel Alerting**: Gửi cảnh báo qua Telegram, Webhook, Log
+
+### 2.2. Giao diện người dùng (UI)
+
+- **Dashboard**: Tổng quan về trạng thái hệ thống và alerts
+- **Alert Management**: Xem, xác nhận và quản lý các cảnh báo
+- **Grafana Integration**: Embed dashboard Grafana để visualize metrics
+- **Real-time Updates**: Cập nhật dữ liệu real-time qua API polling
+
+---
+
+## 3. Các luật phát hiện (Detection Rules)
+
+| Rule | Severity | Mô tả |
+|------|----------|-------|
+| **ddos** | CRITICAL | Phát hiện DDoS attack real-time khi traffic vượt ngưỡng 10x baseline |
+| **traffic_death** | CRITICAL | Phát hiện service chết khi traffic rate = 0 nhưng trước đó có baseline |
+| **traffic_spike** | CRITICAL | Phát hiện traffic spike bất thường (3x baseline) từ Prometheus metrics |
+| **namespace_access** | HIGH | Phát hiện truy cập trái phép đến namespace nhạy cảm (monitoring, security...) |
+| **suspicious_outbound** | HIGH | Cảnh báo kết nối đến các port nguy hiểm: Telnet (23), SMB (445), MySQL (3306)... |
+| **block_connection** | HIGH | Phát hiện DROP flows (connections bị chặn bởi Network Policy) |
+| **unusual_traffic** | HIGH | Phát hiện traffic từ sources không được phép |
+| **port_scan** | HIGH | Phát hiện port scanning (>20 unique ports trong 30s) |
+
+### Cấu hình Rules
+
+Rules được cấu hình trong `values.yaml`:
 
 ```yaml
-application:
-  hubble_server: "hubble-relay.hubble.svc.cluster.local:4245"
+rules:
+  - name: "ddos"
+    enabled: true
+    severity: "CRITICAL"
+    thresholds:
+      multiplier: 10.0
 
-anomalyDetector:
-  image:
-    repository: docker.io/ramseytrinh338/hubble-guard
-    tag: "1.0.0"
-
-grafana:
-  adminPassword: "your-secure-password"
+  - name: "namespace_access"
+    enabled: true
+    severity: "HIGH"
+    thresholds:
+      forbidden_namespaces:
+        - "monitoring"
+        - "security"
 ```
 
-### Tài Liệu Chi Tiết
+---
 
-📖 **Xem hướng dẫn đầy đủ**: [`HUONG_DAN_TRIEN_KHAI_K8S.md`](./HUONG_DAN_TRIEN_KHAI_K8S.md)
+## 4. Cài đặt
 
-Hướng dẫn chi tiết bao gồm:
-- Các bước triển khai từng bước
-- Cấu hình cho các môi trường khác nhau
-- Troubleshooting các vấn đề thường gặp
-- Cấu hình bảo mật và best practices
+### 4.a. Môi trường Development
 
-### Tài Liệu Helm Chart
+#### Yêu cầu
 
-- **Helm Chart Documentation**: [`HELM_CHART_DEPLOYMENT.md`](./HELM_CHART_DEPLOYMENT.md) - Tài liệu chi tiết về cấu trúc chart
-- **Chart README**: [`helm/hubble-guard/README.md`](./helm/hubble-guard/README.md) - Tài liệu nhanh về chart
-- **Values File**: [`helm/hubble-guard/values.yaml`](./helm/hubble-guard/values.yaml) - Tất cả các tùy chọn cấu hình
+- Go 1.21+
+- Docker & Docker Compose
+- Kubernetes cluster (Minikube/Kind/Docker Desktop)
+- Cilium + Hubble đã cài đặt
+- Helm 3.0+
 
-## Đóng góp
+#### Bước 1: Clone repository
 
-1. Fork repository
-2. Tạo feature branch
-3. Commit changes
-4. Push to branch
-5. Tạo Pull Request
+```bash
+git clone https://github.com/your-repo/hubble-guard.git
+cd hubble-guard
+```
 
-## Changelog
+#### Bước 2: Đảm bảo cài đặt Cilium với Hubble
+
+```bash
+# Cài đặt Cilium CLI
+curl -L --remote-name-all https://github.com/cilium/cilium-cli/releases/latest/download/cilium-linux-amd64.tar.gz
+sudo tar xzvfC cilium-linux-amd64.tar.gz /usr/local/bin
+
+# Cài đặt Cilium với Hubble enabled
+cilium install --set hubble.relay.enabled=true --set hubble.ui.enabled=true
+
+# Kiểm tra trạng thái
+cilium status
+```
+
+#### Bước 3: Build và chạy local
+
+```bash
+# Install dependencies
+make deps
+
+# Chạy Anomaly Detector
+make run
+
+# Chạy API Server (terminal khác)
+make api-run
+```
+
+#### Bước 4: Chạy UI (development mode)
+
+```bash
+cd ui
+npm install
+npm run dev
+```
+
+### 4.b. Môi trường Production
+
+#### Yêu cầu
+
+- Kubernetes cluster 1.19+ (GKE, EKS, AKS, on-premise)
+- Cilium CNI đã cài đặt với Hubble enabled
+- Helm 3.0+
+- Ingress Controller (nginx-ingress recommended)
+- (Optional) Cert-Manager cho HTTPS
+
+#### Bước 1: Đảm bảo cài đặt Cilium với Hubble
+
+```bash
+cilium status
+```
+
+#### Bước 2: Chỉnh sửa file values production
+
+```yaml
+# Production values
+application:
+  hubble_server: "hubble-relay.kube-system.svc.cluster.local:80"
+
+# Cấu hình alerting
+alerting:
+  enabled: true
+  channels:
+    telegram: true
+  telegram:
+    bot_token: "YOUR_BOT_TOKEN"
+    chat_id: "YOUR_CHAT_ID"
+
+# Rules configuration
+rules:
+  - name: "ddos"
+    enabled: true
+    severity: "CRITICAL"
+    thresholds:
+      multiplier: 10.0
+  
+  - name: "namespace_access"
+    enabled: true
+    severity: "HIGH"
+    thresholds:
+      forbidden_namespaces:
+        - "kube-system"
+        - "monitoring"
+
+# Resources cho production
+anomalyDetector:
+  replicaCount: 2
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+prometheus:
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: "standard"
+  retention: "30d"
+
+grafana:
+  adminPassword: "SECURE_PASSWORD_HERE"
+
+# UI với Ingress
+ui:
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    hosts:
+      - host: hubble-guard.your-domain.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: hubble-guard-tls
+        hosts:
+          - hubble-guard.your-domain.com
+```
+
+#### Bước 3: Deploy với Helm
+
+```bash
+
+# Deploy
+helm upgrade --install hubble-guard ./helm/hubble-guard \
+  -n hubble-guard \
+  --create-namespace \
+  -f production-values.yaml
+
+# Kiểm tra deployment
+kubectl get pods -n hubble-guard
+kubectl get svc -n hubble-guard
+kubectl get ingress -n hubble-guard
+```
+
+#### Bước 4: Verify deployment
+
+```bash
+# Kiểm tra tất cả pods đang chạy
+kubectl get pods -n hubble-guard -w
+
+# Kiểm tra logs
+kubectl logs -f deployment/hubble-guard-anomaly-detector -n hubble-guard
+kubectl logs -f deployment/hubble-guard-api-server -n hubble-guard
+
+# Kiểm tra Prometheus targets
+kubectl port-forward svc/hubble-guard-prometheus 9090:9090 -n hubble-guard
+# Truy cập: http://localhost:9090/targets
+```
 
 
-### v1.1.0 - Tối ưu hóa codebase
-- ✅ Loại bỏ các function không sử dụng
-- ✅ Xóa `hubble_real_client.go` (không được sử dụng)
-- ✅ Xóa `common.go` (chỉ chứa function không sử dụng)
-- ✅ Tối ưu hóa `anomaly_detector.go` - xóa 3 functions không cần thiết
-- ✅ Tối ưu hóa `rule_engine.go` - xóa 4 functions không cần thiết
-- ✅ Tối ưu hóa `config.go` - xóa `DefaultConfig()` không sử dụng
-- ✅ Tối ưu hóa `hubble_grpc_client.go` - xóa `GetNamespaces()` không sử dụng
-- 🔄 Cập nhật README.md với thông tin mới về Redis và Rule Engine
-
-### v1.0.0 - Phiên bản đầu tiên
-- 🚀 Tính năng cơ bản: kết nối Hubble, anomaly detection
--  Redis-based caching và rule engine
-- 🎯 Interactive menu interface
-
-## License
-
-MIT License
