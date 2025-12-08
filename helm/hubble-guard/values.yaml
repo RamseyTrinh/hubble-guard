@@ -114,7 +114,7 @@ anomalyDetector:
   
   image:
     repository: docker.io/ramseytrinh338/hubble-guard
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     tag: "latest"
   
   imagePullSecrets: []
@@ -163,7 +163,7 @@ apiServer:
   
   image:
     repository: docker.io/ramseytrinh338/hubble-guard-api
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
     tag: "latest"
   
   imagePullSecrets: []
