@@ -32,7 +32,7 @@ rules:
     description: "Phát hiện khi traffic rate = 0 nhưng trước đó có baseline, cảnh báo service có thể đã chết"
   
   - name: "port_scan"
-    enabled: true
+    enabled: false
     severity: "HIGH"
     description: "Phát hiện port scanning attacks"
     thresholds:
@@ -58,7 +58,7 @@ rules:
     severity: "CRITICAL"
     description: "Phát hiện traffic spike có thể là DDoS (từ Prometheus)"
     thresholds:
-      multiplier: 3.0
+      multiplier: 4.0
 
   - name: "block_connection"
     enabled: true
