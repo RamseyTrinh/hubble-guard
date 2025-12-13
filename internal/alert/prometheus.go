@@ -146,7 +146,7 @@ func CreateCustomRegistry() *prometheus.Registry {
 	return registry
 }
 
-func StartPrometheusExporterWithCustomRegistry(port string, logger *logrus.Logger) (*PrometheusExporter, error) {
+func StartPrometheusExporter(port string, logger *logrus.Logger) (*PrometheusExporter, error) {
 	metrics := client.NewPrometheusMetrics()
 	registry := CreateCustomRegistry()
 

@@ -92,11 +92,11 @@ func (fb *FlowBroadcaster) run() {
 		fb.mu.RUnlock()
 
 		if hc == nil {
-			fb.logger.Warn("❌ Hubble client became nil → stopping broadcaster loop")
+			fb.logger.Warn(" Hubble client became nil → stopping broadcaster loop")
 			return
 		}
 
-		fb.logger.Infof("🔌 Opening Hubble gRPC Stream for namespaces: %v", namespaces)
+		fb.logger.Infof(" Opening Hubble gRPC Stream for namespaces: %v", namespaces)
 
 		err := hc.StreamFlowsWithMetrics(
 			context.Background(),
@@ -110,7 +110,7 @@ func (fb *FlowBroadcaster) run() {
 		)
 
 		if err != nil && err != context.Canceled {
-			fb.logger.Errorf("⚠️ Hubble stream error: %v → retry in 2s", err)
+			fb.logger.Errorf(" Hubble stream error: %v → retry in 2s", err)
 			time.Sleep(2 * time.Second)
 			continue
 		}
@@ -131,7 +131,7 @@ func (fb *FlowBroadcaster) broadcast(flow storage.Flow) {
 	for _, conn := range clients {
 		conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 		if err := conn.WriteJSON(flow); err != nil {
-			fb.logger.Debugf("🛑 WS send error → removing client: %v", err)
+			fb.logger.Debugf("🔴 WS send error → removing client: %v", err)
 			fb.RemoveClient(conn)
 		}
 	}
@@ -143,7 +143,7 @@ func (fb *FlowBroadcaster) AddClient(conn *websocket.Conn) {
 	n := len(fb.clients)
 	fb.mu.Unlock()
 
-	fb.logger.Infof("🟢 WebSocket client added → total: %d", n)
+	fb.logger.Infof("🟢 WS client added → total: %d", n)
 }
 
 func (fb *FlowBroadcaster) RemoveClient(conn *websocket.Conn) {
@@ -323,14 +323,12 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 	}
 	errors := make(map[string]string)
 
-	// Query total flows - try sum() first, fallback to direct query
 	query := "sum(hubble_flows_total)"
 	h.logger.Debugf("Querying Prometheus: %s", query)
 	if result, err := h.promClient.Query(ctx, query, timeout); err == nil {
 		var totalFlowsValue float64
 		found := false
 
-		// Handle Vector result
 		if vector, ok := result.(prommodel.Vector); ok {
 			if len(vector) > 0 {
 				totalFlowsValue = float64(vector[0].Value)
@@ -338,7 +336,6 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 				h.logger.Debugf("Total flows result (Vector): %v", vector[0].Value)
 			}
 		} else if scalar, ok := result.(*prommodel.Scalar); ok {
-			// Handle Scalar result
 			totalFlowsValue = float64(scalar.Value)
 			found = true
 			h.logger.Debugf("Total flows result (Scalar): %v", scalar.Value)
@@ -347,12 +344,10 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 		if found {
 			response["totalFlows"] = totalFlowsValue
 		} else {
-			// Fallback: try direct query without sum
 			h.logger.Debugf("Query '%s' returned empty, trying direct query", query)
 			directQuery := "hubble_flows_total"
 			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
 				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
-					// Sum manually
 					var sum float64
 					for _, sample := range directVector {
 						sum += float64(sample.Value)
@@ -395,7 +390,6 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 		if found {
 			response["totalAlerts"] = totalAlertsValue
 		} else {
-			// Fallback: try direct query
 			directQuery := "hubble_guard_alerts_total"
 			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
 				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
@@ -439,7 +433,6 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 		if found {
 			response["criticalAlerts"] = criticalAlertsValue
 		} else {
-			// Fallback: try direct query with filter
 			directQuery := `hubble_guard_alerts_total{severity="CRITICAL"}`
 			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
 				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
@@ -483,7 +476,6 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 		if found {
 			response["tcpConnections"] = tcpConnectionsValue
 		} else {
-			// Fallback: try direct query
 			directQuery := "hubble_tcp_connections_total"
 			if directResult, directErr := h.promClient.Query(ctx, directQuery, timeout); directErr == nil {
 				if directVector, ok := directResult.(prommodel.Vector); ok && len(directVector) > 0 {
@@ -505,7 +497,6 @@ func (h *Handlers) GetPrometheusStats(w http.ResponseWriter, r *http.Request) {
 		errors["tcpConnections"] = err.Error()
 	}
 
-	// Include errors in response if any (for debugging)
 	if len(errors) > 0 {
 		response["_errors"] = errors
 	}
@@ -522,12 +513,10 @@ func (h *Handlers) GetDroppedFlowsTimeSeries(w http.ResponseWriter, r *http.Requ
 	ctx := r.Context()
 	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
 
-	// Parse query parameters
 	startStr := r.URL.Query().Get("start")
 	endStr := r.URL.Query().Get("end")
 	stepStr := r.URL.Query().Get("step")
 
-	// Default: last 1 hour, 15 second steps
 	end := time.Now()
 	start := end.Add(-1 * time.Hour)
 	step := 15 * time.Second
@@ -548,10 +537,8 @@ func (h *Handlers) GetDroppedFlowsTimeSeries(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// Query dropped flows time-series
 	query := `sum(hubble_flows_by_verdict_total{verdict="DROPPED"}) by (namespace)`
 
-	// Use QueryRange for time-series data
 	rangeQuery := v1.Range{
 		Start: start,
 		End:   end,
@@ -572,13 +559,11 @@ func (h *Handlers) GetDroppedFlowsTimeSeries(w http.ResponseWriter, r *http.Requ
 
 	if matrix, ok := result.(prommodel.Matrix); ok {
 		for _, series := range matrix {
-			// Get namespace label
 			namespace := "default"
 			if ns, exists := series.Metric["namespace"]; exists {
 				namespace = string(ns)
 			}
 
-			// Convert samples to time-series points
 			points := []map[string]interface{}{}
 			for _, sample := range series.Values {
 				points = append(points, map[string]interface{}{
@@ -615,7 +600,6 @@ func (h *Handlers) GetAlertTypesStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	timeout := time.Duration(h.config.Prometheus.TimeoutSeconds) * time.Second
 
-	// Query alert types - sum by type
 	query := `sum(hubble_guard_alerts_total) by (type)`
 	h.logger.Debugf("Querying Prometheus for alert types: %s", query)
 
@@ -626,7 +610,6 @@ func (h *Handlers) GetAlertTypesStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Convert result to JSON format
 	alertTypes := []map[string]interface{}{}
 
 	if vector, ok := result.(prommodel.Vector); ok {
@@ -645,7 +628,6 @@ func (h *Handlers) GetAlertTypesStats(w http.ResponseWriter, r *http.Request) {
 		h.logger.Warnf("Unexpected result type for alert types: %T", result)
 	}
 
-	// Also query by severity for more details
 	severityQuery := `sum(hubble_guard_alerts_total) by (type, severity)`
 	h.logger.Debugf("Querying Prometheus for alert types by severity: %s", severityQuery)
 
@@ -690,8 +672,4 @@ func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{
 		"error": message,
 	})
-}
-
-func generateID() string {
-	return strconv.FormatInt(time.Now().UnixNano(), 10)
 }

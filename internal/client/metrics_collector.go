@@ -18,14 +18,12 @@ type PrometheusMetrics struct {
 	FlowByVerdict   *prometheus.CounterVec
 	FlowByProtocol  *prometheus.CounterVec
 	FlowByNamespace *prometheus.CounterVec
-
 	// TCP metrics
 	TCPConnections *prometheus.CounterVec
 	TCPFlags       *prometheus.CounterVec
 	TCPBytes       *prometheus.CounterVec
 
-	ConnectionErrors *prometheus.CounterVec
-
+	ConnectionErrors       *prometheus.CounterVec
 	TrafficSpikeMultiplier *prometheus.GaugeVec
 	NewDestinations        *prometheus.CounterVec
 	ErrorResponseRate      *prometheus.CounterVec
@@ -34,10 +32,8 @@ type PrometheusMetrics struct {
 	NamespaceAccess        *prometheus.CounterVec
 	SuspiciousOutbound     *prometheus.CounterVec
 	SourceDestTraffic      *prometheus.CounterVec
-
-	AlertCounter *prometheus.CounterVec
-
-	portScanTracker *portScanTracker
+	AlertCounter           *prometheus.CounterVec
+	portScanTracker        *portScanTracker
 }
 
 type portScanEntry struct {
@@ -481,7 +477,6 @@ func (m *PrometheusMetrics) RecordAlert(namespace, severity, alertType string) {
 	m.AlertCounter.WithLabelValues(namespace, severity, alertType).Inc()
 }
 
-// RecordSourceDestTraffic records traffic between source pod and destination pod/service
 func (m *PrometheusMetrics) RecordSourceDestTraffic(namespace, sourcePod, destPod, destService string) {
 	if namespace == "" {
 		namespace = "unknown"

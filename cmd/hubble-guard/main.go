@@ -52,7 +52,7 @@ func main() {
 	logger := utils.NewLogger(config.Logging.Level)
 	logger.SetLevel(logrus.InfoLevel)
 
-	exporter, err := alert.StartPrometheusExporterWithCustomRegistry(prometheusPort, logger)
+	exporter, err := alert.StartPrometheusExporter(prometheusPort, logger)
 	if err != nil {
 		fmt.Printf("Failed to create Prometheus exporter: %v\n", err)
 		os.Exit(1)
@@ -126,7 +126,7 @@ func registerAlertNotifiers(engine *rules.Engine, config *utils.AnomalyDetection
 }
 
 func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces []string, engine *rules.Engine, logger *logrus.Logger, config *utils.AnomalyDetectionConfig) {
-	fmt.Println("\n =============================================== ANOMALY DETECTOR ===============================================\n")
+	fmt.Println("\n =============================================== ANOMALY DETECTOR ===============================================")
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -167,12 +167,10 @@ func streamFlowsToPrometheus(hubbleClient *client.HubbleGRPCClient, namespaces [
 	fmt.Println(" Flow collection started!")
 	fmt.Println("")
 
-	// Create processor to evaluate flows with rules
 	processor := pipeline.NewProcessor(engine)
 
 	err := hubbleClient.StreamFlowsWithMetrics(ctx, namespaces, func(ns string) {
 	}, func(flow *model.Flow) {
-		// Process flow through engine to evaluate rules
 		if err := processor.Process(ctx, flow); err != nil {
 			logger.Errorf("Failed to process flow: %v", err)
 		}
