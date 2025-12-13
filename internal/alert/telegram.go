@@ -94,40 +94,6 @@ func (tn *TelegramNotifier) SendAlert(alert model.Alert) error {
 	return fmt.Errorf("failed to send alert after %d attempts", maxRetries)
 }
 
-func escapeMarkdown(text string, parseMode string) string {
-	if parseMode == "MarkdownV2" {
-		replacer := strings.NewReplacer(
-			"*", "\\*",
-			"_", "\\_",
-			"[", "\\[",
-			"]", "\\]",
-			"(", "\\(",
-			")", "\\)",
-			"~", "\\~",
-			"`", "\\`",
-			">", "\\>",
-			"#", "\\#",
-			"+", "\\+",
-			"-", "\\-",
-			"=", "\\=",
-			"|", "\\|",
-			"{", "\\{",
-			"}", "\\}",
-			".", "\\.",
-			"!", "\\!",
-		)
-		return replacer.Replace(text)
-	}
-
-	replacer := strings.NewReplacer(
-		"*", "\\*",
-		"_", "\\_",
-		"`", "\\`",
-		"[", "\\[",
-	)
-	return replacer.Replace(text)
-}
-
 func (tn *TelegramNotifier) formatAlertMessage(alert model.Alert) string {
 	if tn.messageTemplate != nil {
 		var buf bytes.Buffer

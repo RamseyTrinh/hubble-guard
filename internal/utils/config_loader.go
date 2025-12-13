@@ -247,7 +247,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 
 		switch ruleConfig.Name {
 		case "ddos":
-			threshold := 3.0
+			threshold := 10.0
 			if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
 				threshold = thresholds
 			} else if thresholds, ok := ruleConfig.Thresholds["multiplier"].(int); ok {
@@ -263,7 +263,7 @@ func RegisterBuiltinRulesFromYAML(engine *rules.Engine, yamlConfig *AnomalyDetec
 
 		case "traffic_spike":
 			if promClient != nil {
-				threshold := 3.0
+				threshold := 4.0
 				if thresholds, ok := ruleConfig.Thresholds["multiplier"].(float64); ok {
 					threshold = thresholds
 				} else if thresholds, ok := ruleConfig.Thresholds["multiplier"].(int); ok {

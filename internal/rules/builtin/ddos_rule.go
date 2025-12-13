@@ -29,7 +29,7 @@ type DDoSRule struct {
 
 func NewDDoSRule(enabled bool, severity string, threshold float64, logger *logrus.Logger) *DDoSRule {
 	if threshold <= 0 {
-		threshold = 3.0
+		threshold = 10.0
 	}
 	return &DDoSRule{
 		name:           "ddos",
@@ -83,14 +83,14 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 		return nil
 	}
 
-	// Collect baseline data
+	// Tính baseline
 	baselineElapsed := now.Sub(baselineStart)
 	if baselineElapsed < r.baselineWindow {
 		r.flowCounts[namespace]++
 		return nil
 	}
 
-	// Calculate baseline if window is complete
+	// Tính baseline nếu window hoàn thành
 	if _, exists := r.baseline[namespace]; !exists {
 		baselineRate := float64(r.flowCounts[namespace]) / r.baselineWindow.Minutes()
 		r.baseline[namespace] = baselineRate
@@ -100,7 +100,7 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 		return nil
 	}
 
-	// Count flows in current window
+	// Đếm flows trong window hiện tại
 	lastReset, resetExists := r.lastReset[namespace]
 	if !resetExists {
 		r.lastReset[namespace] = now
@@ -110,7 +110,7 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 
 	r.flowCounts[namespace]++
 
-	// Check if window has elapsed
+	// Kiểm tra nếu window đã hết hạn
 	elapsed := now.Sub(lastReset)
 	if elapsed >= r.window {
 		alert := r.checkDDoSAttack(namespace, elapsed)
@@ -125,7 +125,7 @@ func (r *DDoSRule) Evaluate(ctx context.Context, flow *model.Flow) *model.Alert 
 func (r *DDoSRule) checkDDoSAttack(namespace string, elapsed time.Duration) *model.Alert {
 	baseline, exists := r.baseline[namespace]
 	if !exists || baseline <= 0 {
-		// Update baseline if we have data
+		// Cập nhật baseline
 		if r.flowCounts[namespace] > 0 {
 			currentRate := float64(r.flowCounts[namespace]) / elapsed.Minutes()
 			r.baseline[namespace] = currentRate
